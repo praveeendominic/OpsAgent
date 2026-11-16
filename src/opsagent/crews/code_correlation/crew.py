@@ -94,4 +94,6 @@ def run_code_correlation_crew(record: TriageRecord, repo_root: Path):
         cc.event_id, cc.incident_id = record.event_id, record.incident_id
         if not cc.repository:
             cc.repository = code_inputs(record, repo_root)["repository"]
+        seen: set[str] = set()
+        cc.recent_commits = [c for c in cc.recent_commits if not (c.sha in seen or seen.add(c.sha))]
     return run

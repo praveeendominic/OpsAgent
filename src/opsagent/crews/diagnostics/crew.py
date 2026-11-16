@@ -59,9 +59,23 @@ class DiagnosticsCrew:
         return Crew(agents=self.agents, tasks=self.tasks, process=Process.sequential, verbose=False)
 
 
+def unit_memory_limits(total_memory_mb: int | None, healthy_rss_mb: float | None) -> tuple[int, int]:
+    """MemoryHigh ~60 % of RAM, MemoryMax ~75 % of RAM, both floored at 1.2 x the healthy RSS. Deterministic so the
+    advisor never has to do arithmetic."""
+    ram = total_memory_mb or 2048
+    floor = int(1.2 * (healthy_rss_mb or 0))
+    high = max(int(ram * 0.60), floor)
+    maxi = max(int(ram * 0.75), floor + 64, high + 64)
+    return high, maxi
+
+
 def diagnostics_inputs(record: TriageRecord) -> dict:
     lp = record.evidence.leak_profile
+    high, maxi = unit_memory_limits(record.instance.total_memory_mb, lp.first_rss_mb if lp else None)
     return {
+        "mem_high_mb": high,
+        "mem_max_mb": maxi,
+        "healthy_rss_mb": f"{lp.first_rss_mb:.0f}" if lp else "unknown",
         "incident_id": record.incident_id,
         "severity": record.severity,
         "event_type": record.event_type,

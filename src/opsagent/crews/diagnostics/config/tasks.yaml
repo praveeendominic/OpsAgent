@@ -43,10 +43,11 @@ recommend_fixes:
     final diagnosis using the timeline and the root cause from the previous tasks.
 
     Fixes must be ranked and concrete:
-    - immediate, owner ops: a systemd drop-in setting MemoryHigh and MemoryMax for the unit, with the exact drop-in
-      text and the commands (systemctl edit or writing the drop-in file, daemon-reload, restart) and the reversal.
-      Size MemoryHigh at about 60 percent of RAM and MemoryMax at about 75 percent, floored at 1.2 times the healthy
-      RSS, and say why that turns a kernel kill into a clean restart.
+    - immediate, owner ops: a systemd drop-in setting MemoryHigh={mem_high_mb}M and MemoryMax={mem_max_mb}M for the
+      unit (these values are already computed: about 60 and 75 percent of the {total_memory_mb} MB of RAM, floored
+      at 1.2 times the healthy RSS of {healthy_rss_mb} MB; use them exactly), with the exact drop-in text and the
+      commands (systemctl edit or writing the drop-in file, daemon-reload, restart) and the reversal. Say why that
+      turns a kernel kill into a clean, logged restart.
     - immediate, owner ops, second: resize the instance one step up in the same family, and state how many minutes
       it buys at the observed growth rate; mark it as optional. Use the real instance id {instance_id} in the
       command (stop, modify-instance-attribute, start), never a placeholder.

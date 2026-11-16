@@ -2,10 +2,19 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import typer
 from rich.console import Console
+
+# CrewAI prints emoji in its event banners; Windows consoles default to a code page that cannot encode them.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            pass
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, help="OpsAgent: agentic L1/L2 incident response (PoC)")
 kb_app = typer.Typer(no_args_is_help=True, help="Knowledge base commands")
