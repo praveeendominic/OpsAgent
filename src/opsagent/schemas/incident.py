@@ -12,7 +12,7 @@ from opsagent.schemas.triage import TriageRecord
 
 
 class DeliveryReceipt(BaseModel):
-    channel: Literal["teams", "email", "outbox", "xmatters"]
+    channel: Literal["teams", "email", "outbox", "servicenow", "xmatters"]
     stage: Literal["stage1", "stage2", "delay", "closure"]
     ok: bool
     detail: str = ""

@@ -37,6 +37,15 @@ class Settings(BaseSettings):
     smtp_password: str = Field(default="", alias="SMTP_PASSWORD")
     smtp_from: str = Field(default="", alias="SMTP_FROM")
     smtp_to: str = Field(default="", alias="SMTP_TO")
+    # ServiceNow ITSM (Table API). Instance is the subdomain (dev12345) or the full https URL.
+    servicenow_instance: str = Field(default="", alias="SERVICENOW_INSTANCE")
+    servicenow_user: str = Field(default="", alias="SERVICENOW_USER")
+    servicenow_password: str = Field(default="", alias="SERVICENOW_PASSWORD")
+    servicenow_token: str = Field(default="", alias="SERVICENOW_TOKEN")
+    servicenow_assignment_group: str = Field(default="", alias="SERVICENOW_ASSIGNMENT_GROUP")
+    servicenow_caller_id: str = Field(default="", alias="SERVICENOW_CALLER_ID")
+    servicenow_category: str = Field(default="software", alias="SERVICENOW_CATEGORY")
+    servicenow_resolve_on_close: bool = Field(default=False, alias="SERVICENOW_RESOLVE_ON_CLOSE")
 
     # Optional integrations and feature flags
     aws_docs_mcp: bool = Field(default=False, alias="AWS_DOCS_MCP")
@@ -104,6 +113,22 @@ class Settings(BaseSettings):
     @property
     def email_enabled(self) -> bool:
         return bool(self.smtp_host.strip() and self.smtp_from.strip() and self.smtp_to.strip())
+
+    @property
+    def servicenow_base_url(self) -> str:
+        inst = self.servicenow_instance.strip().rstrip("/")
+        if not inst:
+            return ""
+        if inst.startswith("http://") or inst.startswith("https://"):
+            return inst
+        if "." in inst:
+            return f"https://{inst}"
+        return f"https://{inst}.service-now.com"
+
+    @property
+    def servicenow_enabled(self) -> bool:
+        has_auth = bool(self.servicenow_token.strip()) or bool(self.servicenow_user.strip() and self.servicenow_password)
+        return bool(self.servicenow_base_url) and has_auth
 
     @property
     def llm_configured(self) -> bool:

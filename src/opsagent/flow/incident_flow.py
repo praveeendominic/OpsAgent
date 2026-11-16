@@ -257,6 +257,15 @@ class IncidentFlow(Flow[IncidentState]):
             stored = f"not stored: {exc}"
             self._fail("close.store", str(exc))
         self.state.kb_record = record
+        if self.state.severity == "critical":
+            try:
+                from opsagent.notify.deliver import deliver_closure
+
+                for r in deliver_closure(self.state.incident_id, record):
+                    self.state.receipts.append(r)
+                    rec.receipt(r)
+            except Exception as exc:  # noqa: BLE001
+                self._fail("close.ticket", str(exc))
         self.state.closed = True
         mark_closed(self.state.incident_id)
         if self._watchdog:

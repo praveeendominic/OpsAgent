@@ -13,6 +13,9 @@ from opsagent.notify.cards import (
 )
 from opsagent.notify.email import render_email, send_email
 from opsagent.notify.outbox import write_outbox
+from opsagent.notify.servicenow import NOT_CONFIGURED as SERVICENOW_NOT_CONFIGURED
+from opsagent.notify.servicenow import send_stage as servicenow_send_stage
+from opsagent.notify.servicenow import send_work_note as servicenow_work_note
 from opsagent.notify.teams import send_card
 from opsagent.schemas.incident import DeliveryReceipt, IncidentPackage
 
@@ -54,7 +57,11 @@ def _fan_out(
     stage: str,
     s: Settings,
     email_parts: tuple[str, str, str] | None,
+    pkg: IncidentPackage | None = None,
+    note: tuple[str, str] | None = None,
 ) -> list[DeliveryReceipt]:
+    """Teams, email and ServiceNow. A package creates/updates the ServiceNow record; a (incident_id, text) note is
+    appended to it as a work note."""
     receipts: list[DeliveryReceipt] = []
     if s.teams_enabled:
         receipts.append(send_card(card, settings=s, stage=stage))
@@ -66,6 +73,13 @@ def _fan_out(
             receipts.append(send_email(subject, text, html, settings=s, stage=stage))
         else:
             receipts.append(_not_configured("email", stage, EMAIL_NOT_CONFIGURED))
+    if s.servicenow_enabled:
+        if pkg is not None:
+            receipts.append(servicenow_send_stage(pkg, card_to_markdown(card), settings=s))
+        elif note is not None:
+            receipts.append(servicenow_work_note(note[0], note[1], stage, settings=s))
+    else:
+        receipts.append(_not_configured("servicenow", stage, SERVICENOW_NOT_CONFIGURED))
     return receipts
 
 
@@ -80,7 +94,7 @@ def deliver(pkg: IncidentPackage, settings: Settings | None = None) -> list[Deli
         receipts.append(_outbox_receipt(pkg.stage, paths))
     except Exception as exc:  # noqa: BLE001 - the outbox must not take the flow down either
         receipts.append(_outbox_receipt(pkg.stage, [], error=exc))
-    receipts.extend(_fan_out(card, pkg.stage, s, (subject, text, html)))
+    receipts.extend(_fan_out(card, pkg.stage, s, (subject, text, html), pkg=pkg))
     return receipts
 
 
@@ -107,5 +121,30 @@ def deliver_delay_notice(
         receipts.append(_outbox_receipt("delay", paths))
     except Exception as exc:  # noqa: BLE001
         receipts.append(_outbox_receipt("delay", [], error=exc))
-    receipts.extend(_fan_out(card, "delay", s, (subject, text, html)))
+    receipts.extend(_fan_out(card, "delay", s, (subject, text, html), note=(incident_id, text)))
     return receipts
+
+
+def deliver_closure(incident_id: str, kb_record, settings: Settings | None = None) -> list[DeliveryReceipt]:
+    """Closure note for the ticketing system only: the knowledge record digest and the label workflow to follow.
+    Teams and email already carried the diagnosis; the ITSM record is the one that must show the closure."""
+    s = settings or get_settings()
+    lines = [
+        f"{s.brand} OpsAgent closed its automated handling of {incident_id}.",
+        "",
+        f"Root cause: {kb_record.root_cause_summary}",
+        f"Category: {kb_record.root_cause_category or 'n/a'}; code/infra verdict: {kb_record.verdict}"
+        + (f" at {kb_record.code_location}" if kb_record.code_location else ""),
+    ]
+    if kb_record.immediate_fix:
+        lines.append(f"Immediate fix: {kb_record.immediate_fix}")
+    if kb_record.durable_fix:
+        lines.append(f"Durable fix: {kb_record.durable_fix}")
+    if kb_record.citations:
+        lines.append("Citations: " + ", ".join(kb_record.citations[:5]))
+    lines += ["", f"Knowledge record stored with label '{kb_record.label}'. "
+              "Label the RCA (accepted / partially_correct / wrong) in the OpsAgent recorder so future incidents can reuse it."]
+    text = "\n".join(lines)
+    if not s.servicenow_enabled:
+        return [_not_configured("servicenow", "closure", SERVICENOW_NOT_CONFIGURED)]
+    return [servicenow_work_note(incident_id, text, "closure", settings=s, resolve=s.servicenow_resolve_on_close)]

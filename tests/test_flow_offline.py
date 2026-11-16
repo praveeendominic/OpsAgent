@@ -102,7 +102,9 @@ def test_flow_runs_end_to_end_offline(isolated_settings, monkeypatch):
     assert set(run["artifacts"]) >= {"event", "triage", "diagnosis", "code_correlation", "package_stage1", "package_stage2", "kb_record"}
     assert run["artifacts"]["package_stage2"]["code_correlation"]["verdict"] == "shared"
     assert run["artifacts"]["kb_record"]["label"] == "pending"
-    assert len(run["receipts"]) == 2  # one per stage from the fake deliver
+    stages = [r["stage"] for r in run["receipts"]]
+    assert stages == ["stage1", "stage2", "closure"]  # fake deliver per stage, then the ticket closure note
+    assert run["receipts"][2]["channel"] == "servicenow" and run["receipts"][2]["ok"] is False  # not configured here
 
 
 def test_second_run_is_deduplicated(isolated_settings, monkeypatch):
