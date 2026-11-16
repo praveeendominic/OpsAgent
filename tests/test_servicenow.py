@@ -211,3 +211,51 @@ def test_closure_not_configured(tmp_path: Path) -> None:
                   root_cause_summary="r", created_at=datetime.now(timezone.utc))
     out = deliver_closure("inc-x", kb, settings=Settings(_env_file=None, OPSAGENT_OUTBOX_DIR=str(tmp_path)))
     assert len(out) == 1 and out[0].ok is False and out[0].channel == "servicenow" and out[0].stage == "closure"
+
+
+def test_short_description_does_not_repeat_the_service_prefix(stage1_pkg, sn_settings) -> None:  # noqa: F811
+    # the flow's deterministic headline already starts with "<service> on <instance>: ..."
+    pkg = stage1_pkg.model_copy(update={"headline": f"{stage1_pkg.service} on {stage1_pkg.instance_id}: process oom kill"})
+    title = sn.incident_fields(pkg, "body", sn_settings)["short_description"]
+    assert title == f"[CRITICAL] {stage1_pkg.service} on {stage1_pkg.instance_id}: process oom kill"
+    assert title.count(stage1_pkg.service) == 1
+
+    # a free-form headline (even one that names the service) still gets the service and instance in front
+    pkg = stage1_pkg.model_copy(update={"headline": "orders-api OOM-killed by unbounded order cache"})
+    title = sn.incident_fields(pkg, "body", sn_settings)["short_description"]
+    assert title == f"[CRITICAL] {stage1_pkg.service} on {stage1_pkg.instance_id}: orders-api OOM-killed by unbounded order cache"
+
+
+def test_timed_out_create_is_recovered_by_correlation_lookup(monkeypatch, stage1_pkg, sn_settings) -> None:  # noqa: F811
+    """A hibernating developer instance may commit the record and still let the POST time out; the sender must
+    find the record by correlation id instead of reporting a lost create (and must not open a duplicate)."""
+    fake = FakeServiceNow()
+    base_factory = fake.client_factory()
+
+    class _SlowPost(base_factory):
+        def post(self, url, json=None, params=None, **k):
+            super().post(url, json=json, params=params, **k)  # the record lands server-side...
+            raise httpx.ReadTimeout("The read operation timed out")  # ...but the response never arrives
+
+    monkeypatch.setattr(sn.httpx, "Client", _SlowPost)
+    r = sn.send_stage(stage1_pkg, "body", settings=sn_settings)
+    assert r.ok, r.detail
+    assert r.detail.startswith("created INC10001")
+    assert len(fake.records) == 1
+    methods = [c.get("method") for c in fake.calls if "method" in c]
+    assert methods == ["GET", "POST", "GET"]
+
+    # when the record truly never landed, the timeout is still reported as a failed delivery
+    empty = FakeServiceNow()
+
+    class _LostPost(empty.client_factory()):
+        def post(self, url, json=None, params=None, **k):
+            raise httpx.ReadTimeout("The read operation timed out")
+
+    monkeypatch.setattr(sn.httpx, "Client", _LostPost)
+    r = sn.send_stage(stage1_pkg, "body", settings=sn_settings)
+    assert r.ok is False and "ReadTimeout" in r.detail and not empty.records
+
+
+def test_client_timeout_allows_for_instance_wake_up(sn_settings) -> None:
+    assert sn.ServiceNowClient(sn_settings).timeout >= 30

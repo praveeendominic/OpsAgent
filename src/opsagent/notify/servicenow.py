@@ -37,7 +37,7 @@ class ServiceNowError(RuntimeError):
 class ServiceNowClient:
     """Thin Table API client: find by correlation id, create, update. Basic auth or a bearer token."""
 
-    def __init__(self, settings: Settings | None = None, timeout: float = 15.0):
+    def __init__(self, settings: Settings | None = None, timeout: float = 30.0):
         s = settings or get_settings()
         self.base = s.servicenow_base_url
         self.timeout = timeout
@@ -86,9 +86,8 @@ class ServiceNowClient:
 def incident_fields(pkg: IncidentPackage, body: str, settings: Settings) -> dict:
     """Fields for a new incident record built from the package (stage 1 normally; stage 2 when stage 1 never landed)."""
     impact, urgency = _PRIORITY.get((pkg.severity or "info").lower(), ("3", "3"))
-    service = pkg.service or pkg.triage.service or "unknown-service"
     fields: dict[str, Any] = {
-        "short_description": f"[{(pkg.severity or 'info').upper()}] {service} on {pkg.instance_id}: {pkg.headline}"[:160],
+        "short_description": f"[{(pkg.severity or 'info').upper()}] {pkg.title}"[:160],
         "description": body,
         "impact": impact,
         "urgency": urgency,
@@ -120,7 +119,14 @@ def send_stage(pkg: IncidentPackage, body: str, settings: Settings | None = None
         client = ServiceNowClient(s)
         existing = client.find_by_correlation(pkg.incident_id)
         if existing is None:
-            rec = client.create(incident_fields(pkg, body, s))
+            try:
+                rec = client.create(incident_fields(pkg, body, s))
+            except httpx.TimeoutException:
+                # a developer instance waking from hibernation can take longer than the timeout to answer the POST
+                # while still committing the record; look it up before declaring the create lost
+                rec = client.find_by_correlation(pkg.incident_id)
+                if rec is None:
+                    raise
             verb = "created"
             if pkg.stage == "stage2":
                 rec = client.update(rec["sys_id"], {"work_notes": stage_work_note(pkg, body)}) or rec

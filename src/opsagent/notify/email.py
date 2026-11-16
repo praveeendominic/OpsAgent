@@ -33,11 +33,7 @@ def _stage_label(stage: str) -> str:
 
 
 def build_subject(pkg: IncidentPackage) -> str:
-    service = pkg.service or pkg.triage.service or "unknown-service"
-    return (
-        f"[{(pkg.severity or 'info').upper()}] {service} on {pkg.instance_id}: {pkg.headline} "
-        f"({pkg.incident_id}, stage {_stage_number(pkg.stage)})"
-    )
+    return f"[{(pkg.severity or 'info').upper()}] {pkg.title} ({pkg.incident_id}, stage {_stage_number(pkg.stage)})"
 
 
 def render_email(pkg: IncidentPackage) -> tuple[str, str, str]:

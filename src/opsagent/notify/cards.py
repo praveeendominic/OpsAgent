@@ -87,7 +87,7 @@ def _header(pkg: IncidentPackage, stage_label: str) -> list[dict]:
             weight="Bolder",
             color=_severity_colour(pkg.severity),
         ),
-        _text(pkg.headline, weight="Bolder"),
+        _text(pkg.short_headline, weight="Bolder"),
     ]
 
 

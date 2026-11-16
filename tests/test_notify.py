@@ -580,3 +580,20 @@ def test_deliver_delay_notice(unconfigured: Settings, tmp_path: Path) -> None:
     assert len(ok) == 1 and ok[0].channel == "outbox"
     assert (tmp_path / INCIDENT_ID / "delay.card.json").exists()
     assert (tmp_path / INCIDENT_ID / "delay.email.eml").exists()
+
+
+def test_package_title_never_doubles_the_scope(stage1_pkg: IncidentPackage) -> None:
+    scoped = stage1_pkg.model_copy(update={"headline": f"{SERVICE} on {INSTANCE}: process oom kill"})
+    assert scoped.short_headline == "process oom kill"
+    assert scoped.title == f"{SERVICE} on {INSTANCE}: process oom kill"
+    subject, _, _ = render_email(scoped)
+    assert subject.count(INSTANCE) == 1 and subject.count(SERVICE) == 1
+
+    free = stage1_pkg.model_copy(update={"headline": "orders-api OOM-killed by unbounded order cache"})
+    assert free.short_headline == free.headline
+    assert free.title == f"{SERVICE} on {INSTANCE}: orders-api OOM-killed by unbounded order cache"
+
+    # the Teams card header already shows "<SEVERITY>: service on instance", so its headline line drops the scope
+    card = build_stage1_card(scoped)
+    assert not any(block.get("text") == scoped.headline for block in card["body"])
+    assert any(block.get("text") == "process oom kill" for block in card["body"])

@@ -40,3 +40,26 @@ class IncidentPackage(BaseModel):
     trace_url: str | None = None
     brand: str = "The Ark Enterprise"
     created_at: datetime
+
+    @property
+    def service_name(self) -> str:
+        return self.service or self.triage.service or "unknown-service"
+
+    @property
+    def _scope_prefix(self) -> str:
+        return f"{self.service_name} on {self.instance_id}"
+
+    @property
+    def short_headline(self) -> str:
+        """The headline without a leading "<service> on <instance>:" (the flow's deterministic stage 1 headline has one)."""
+        prefix = self._scope_prefix.lower()
+        head = self.headline.strip()
+        if head.lower().startswith(prefix):
+            rest = head[len(prefix):].lstrip(" :-").strip()
+            return rest or head
+        return head
+
+    @property
+    def title(self) -> str:
+        """One-line title for subjects and ticket descriptions: "<service> on <instance>: <headline>", never doubled."""
+        return f"{self._scope_prefix}: {self.short_headline}"
