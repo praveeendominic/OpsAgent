@@ -286,6 +286,23 @@ class IncidentFlow(Flow[IncidentState]):
 
 
 # ---------------------------------------------------------------------- entry point
+def _warm_up_knowledge_base(recorder: RunRecorder) -> None:
+    """Load the embedding model and the indexes once, on the main thread, before crews use them concurrently."""
+    recorder.start_step("kb.warm_up")
+    try:
+        from opsagent.kb.store import get_store
+
+        store = get_store()
+        warm = getattr(store, "warm_up", None)
+        if callable(warm):
+            warm()
+        else:
+            store.search("warm up", k=1, namespace="docs")
+        recorder.end_step("kb.warm_up", output={"docs": store.count("docs"), "incidents": store.count("incidents")})
+    except Exception as exc:  # noqa: BLE001
+        recorder.end_step("kb.warm_up", error=f"{type(exc).__name__}: {exc}")
+
+
 def load_event(path: Path) -> RawEvent:
     return RawEvent.model_validate(json.loads(Path(path).read_text(encoding="utf-8")))
 
@@ -300,6 +317,7 @@ def run_event(event_path: Path, force: bool = False) -> dict:
         return {"duplicate_of": dup, "event_id": event.event_id, "message": "event de-duplicated; use --force to run anyway"}
     incident_id = new_incident_id(event.event_id, event.instance_id, event.event_type)
     recorder = RunRecorder(incident_id, event.event_id)
+    _warm_up_knowledge_base(recorder)
     persistence = SQLiteFlowPersistence(str(s.flows_db))
     flow = IncidentFlow(recorder=recorder, persistence=persistence)
     try:

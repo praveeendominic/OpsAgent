@@ -1,15 +1,14 @@
 """One place that builds the CrewAI LLM for every agent (Azure OpenAI through LiteLLM)."""
 from __future__ import annotations
 
-from functools import lru_cache
-
 from crewai import LLM
 
 from opsagent.config import get_settings
 
 
-@lru_cache(maxsize=4)
 def make_llm(temperature: float | None = None, max_tokens: int | None = None) -> LLM:
+    """A fresh LLM per call. CrewAI attaches its token-counting callbacks to the LLM object, so agents must not share
+    one instance or usage is attributed to the wrong crew."""
     s = get_settings()
     s.export_llm_env()
     kwargs = dict(

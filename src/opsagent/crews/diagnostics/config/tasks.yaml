@@ -24,8 +24,9 @@ find_root_cause:
        (for example the meaning of "Out of memory: Killed process", or systemd Restart behaviour), once for the
        control that would have prevented a kernel kill (MemoryHigh and MemoryMax on the unit). Use
        closed_incidents_search once to see whether this service has failed the same way before.
-    3. Every citation must copy the tool's source string exactly (it starts with kb:// or https://). Do not invent
-       citations.
+    3. Every citation must copy the tool's source string exactly as printed between the pipes in the tool output,
+       including the part after the # sign (for example kb://systemd/resource-control#memorymax). Never shorten,
+       merge or invent a source; a citation you cannot copy from a tool result must not appear.
     4. Say whether you agree with the rule-based classification: reason={reason}, sub_reason={sub_reason}.
   expected_output: >
     A RootCauseDraft with: root_cause (summary of two or three sentences naming the service, the mechanism and the
@@ -47,7 +48,8 @@ recommend_fixes:
       Size MemoryHigh at about 60 percent of RAM and MemoryMax at about 75 percent, floored at 1.2 times the healthy
       RSS, and say why that turns a kernel kill into a clean restart.
     - immediate, owner ops, second: resize the instance one step up in the same family, and state how many minutes
-      it buys at the observed growth rate; mark it as optional.
+      it buys at the observed growth rate; mark it as optional. Use the real instance id {instance_id} in the
+      command (stop, modify-instance-attribute, start), never a placeholder.
     - durable, owner dev: bound the in-process cache (LRU size or TTL) or stop holding orders in memory; the Code
       Correlation crew names the file, so describe the change, not the file.
     Copy the timeline and the citations from the previous tasks into the final object unchanged.

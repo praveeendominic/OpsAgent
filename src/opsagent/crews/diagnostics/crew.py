@@ -79,10 +79,53 @@ def diagnostics_inputs(record: TriageRecord) -> dict:
     }
 
 
+def resolve_citations(diagnosis: Diagnosis) -> list[str]:
+    """Make every citation resolvable: a source the knowledge base does not know is replaced by the best matching
+    chunk for that citation's title, and the change is noted. Returns the notes."""
+    from opsagent.kb.store import get_store
+
+    notes: list[str] = []
+    try:
+        store = get_store()
+    except Exception as exc:  # noqa: BLE001
+        return [f"citation check skipped: {exc}"]
+    resolved: list[Citation] = []
+    seen: set[str] = set()
+    for c in diagnosis.citations:
+        namespace = "incidents" if c.source.startswith("kb://incidents/") else "docs"
+        try:
+            hits = store.search(f"{c.title} {c.snippet or ''}".strip(), k=3, namespace=namespace)
+        except Exception as exc:  # noqa: BLE001
+            notes.append(f"citation check failed for {c.source}: {exc}")
+            resolved.append(c)
+            continue
+        exact = next((h for h in hits if h.source == c.source), None)
+        if exact is None and c.source.startswith("kb://"):
+            try:
+                exact = next((h for h in store.search(c.source.replace("kb://", "").replace("#", " ").replace("/", " "), k=3,
+                                                       namespace=namespace) if h.source == c.source), None)
+            except Exception:  # noqa: BLE001
+                exact = None
+        if exact is None and hits:
+            best = hits[0]
+            notes.append(f"citation '{c.source}' not found in the knowledge base; replaced with '{best.source}'")
+            c = Citation(title=best.title, source=best.source, snippet=c.snippet or best.text[:160])
+        elif exact is not None and not c.snippet:
+            c = Citation(title=c.title, source=c.source, snippet=exact.text[:160])
+        if c.source not in seen:
+            seen.add(c.source)
+            resolved.append(c)
+    diagnosis.citations = resolved
+    return notes
+
+
 def run_diagnostics_crew(record: TriageRecord):
     run = run_crew(DiagnosticsCrew().crew(), diagnostics_inputs(record), Diagnosis)
     if run.output is not None:
         d: Diagnosis = run.output
         d.event_id, d.incident_id = record.event_id, record.incident_id
         d.provider, d.event_type, d.severity = record.provider, record.event_type, record.severity
+        notes = resolve_citations(d)
+        if notes:
+            d.notes = (d.notes + " " if d.notes else "") + "Citation check: " + "; ".join(notes)
     return run

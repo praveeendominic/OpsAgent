@@ -146,30 +146,51 @@ class FaissStore:
     # ---------------------------------------------------------------- embedding
     @property
     def model(self):
+        """The SentenceTransformer, loaded once. Guarded: the Flow runs crews in parallel threads and a
+        half-constructed model observed from a second thread fails with torch "meta tensor" errors."""
         if self._model is None:
-            from sentence_transformers import SentenceTransformer
+            with self._lock:
+                if self._model is None:
+                    from sentence_transformers import SentenceTransformer
 
-            log.info("loading embedding model %s", self.model_name)
-            self._model = SentenceTransformer(self.model_name)
+                    log.info("loading embedding model %s", self.model_name)
+                    self._model = SentenceTransformer(self.model_name)
         return self._model
 
     def embed(self, texts: list[str]) -> np.ndarray:
         if not texts:
             return np.zeros((0, 0), dtype=np.float32)
-        vecs = self.model.encode(texts, normalize_embeddings=True, convert_to_numpy=True, show_progress_bar=False)
+        # encode() is not safe to call concurrently on one model instance; serialise it
+        with self._lock:
+            vecs = self.model.encode(texts, normalize_embeddings=True, convert_to_numpy=True,
+                                     show_progress_bar=False)
         return np.ascontiguousarray(vecs, dtype=np.float32)
+
+    def warm_up(self) -> "FaissStore":
+        """Load the embedding model and every on-disk namespace (index included). Call once from the main
+        thread before kicking off parallel crews so no worker pays for, or races on, the lazy load."""
+        with self._lock:
+            _ = self.model
+            for child in sorted(self.root.iterdir()):
+                if child.is_dir() and (child / _META_FILE).exists():
+                    self._ns(child.name)._ensure_index()
+            # one tiny encode so torch/tokenizer lazy state is also initialised here, not in a worker
+            self.embed(["warm up"])
+        return self
 
     # ---------------------------------------------------------------- namespaces
     def _ns(self, namespace: str) -> _Namespace:
-        ns = self._namespaces.get(namespace)
-        if ns is None:
-            ns = _Namespace(self.root / namespace)
-            ns.load()
-            self._namespaces[namespace] = ns
-        return ns
+        with self._lock:
+            ns = self._namespaces.get(namespace)
+            if ns is None:
+                ns = _Namespace(self.root / namespace)
+                ns.load()
+                self._namespaces[namespace] = ns
+            return ns
 
     def namespaces(self) -> list[str]:
-        return sorted(self._namespaces)
+        with self._lock:
+            return sorted(self._namespaces)
 
     # ---------------------------------------------------------------- public API
     def add(self, namespace: str, ids: list[str], texts: list[str], metadatas: list[dict[str, Any]] | None = None) -> int:
@@ -183,8 +204,8 @@ class FaissStore:
             return 0
         if len(set(ids)) != len(ids):
             raise ValueError("duplicate ids in a single add() call")
-        vectors = self.embed(texts)
         with self._lock:
+            vectors = self.embed(texts)
             ns = self._ns(namespace)
             ns.remove(set(ids))
             ns.append(list(ids), list(texts), [dict(m) for m in metadatas], vectors)

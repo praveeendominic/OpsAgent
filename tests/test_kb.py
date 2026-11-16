@@ -133,6 +133,60 @@ def test_store_upsert_delete_count_and_reload(tmp_path: Path, embedding_model):
     assert reloaded.search("alpha", namespace="t") == []
 
 
+def test_store_is_safe_under_parallel_cold_use(tmp_path: Path):
+    """Reproduces the Flow's parallel crews: one thread searches (lazy model load) while another upserts."""
+    import threading
+
+    store = FaissStore(tmp_path / "idx", MODEL)  # cold: no model loaded yet
+    store.add("docs", ["seed"], ["seed passage about memory limits"], [{"title": "seed", "source": "kb://seed#s"}])
+    errors: list[BaseException] = []
+    results: dict[str, object] = {}
+    go = threading.Barrier(3)
+
+    def searcher():
+        try:
+            go.wait()
+            results["search"] = store.search("memory limit", k=1, namespace="docs")
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    def writer():
+        try:
+            go.wait()
+            results["add"] = store.add("incidents", ["INC-T1"], ["incident text about an OOM kill"],
+                                       [{"title": "t", "source": "kb://incidents/INC-T1"}])
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=searcher), threading.Thread(target=writer)]
+    for t in threads:
+        t.start()
+    go.wait()
+    for t in threads:
+        t.join(timeout=180)
+    assert not errors, errors
+    assert results["add"] == 1 and results["search"] and results["search"][0].id == "seed"
+    assert store.count("incidents") == 1
+
+
+def test_warm_up_loads_model_and_namespaces(tmp_path: Path, embedding_model):
+    seed = FaissStore(tmp_path / "idx", MODEL)
+    seed._model = embedding_model
+    seed.add("docs", ["a"], ["alpha"], [{}])
+    seed.add("incidents", ["b"], ["beta"], [{}])
+
+    fresh = FaissStore(tmp_path / "idx", MODEL)
+    assert fresh._model is None
+    assert fresh.warm_up() is fresh
+    assert fresh._model is not None
+    assert fresh.namespaces() == ["docs", "incidents"]
+    assert all(fresh._ns(ns).index is not None for ns in ("docs", "incidents"))
+
+    from opsagent import kb as kb_pkg
+
+    assert callable(kb_pkg.warm_up)
+
+
 # ---------------------------------------------------------------------------- docs index + search
 def test_build_docs_index_and_search(kb_env: FaissStore):
     n = build_docs_index()
