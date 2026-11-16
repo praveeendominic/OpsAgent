@@ -1,0 +1,27 @@
+# Demo inventory. In production Triage reads this through the InstanceAPI adapter (ec2:DescribeInstances);
+# for the PoC the Flow makes no AWS calls, so the demo instance is described here.
+instances:
+  i-047b21366545ce721:
+    instance_type: t3.small
+    total_memory_mb: 2048
+    vcpus: 2
+    region: ap-south-1
+    swap_mb: 0
+    tags:
+      Name: ec2-failure-demo-app
+      app: orders-api
+      env: demo
+      owner: platform-oncall
+    units:
+      orders-api.service:
+        description: orders-api dummy service (EC2 failure demo)
+        memory_high: null
+        memory_max: null
+        restart: always
+
+# Maps the `app` tag to the repository Code Correlation may read (relative to the project root unless absolute).
+repositories:
+  orders-api:
+    path: examples/orders-api
+    default_branch: main
+    language: python

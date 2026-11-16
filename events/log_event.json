@@ -1,0 +1,43 @@
+{
+  "schema_version": "raw-1.0",
+  "event_id": "evt-295bb863-5296-5d5a-9933-efdc503f0525",
+  "event_type": "memory",
+  "alarm": {
+    "name": "ec2-failure-demo-oom-kill-system",
+    "state": "ALARM",
+    "fired_at": "2026-11-15T15:22:07Z",
+    "reason": "Threshold Crossed: 1 out of the last 1 datapoints [1.0 (15/11/26 15:21:00)] was greater than or equal to the threshold (1.0) (minimum 1 datapoint for OK -> ALARM transition)."
+  },
+  "instance_id": "i-047b21366545ce721",
+  "window": {
+    "start": "2026-11-15T15:07:07Z",
+    "end": "2026-11-15T15:23:07Z"
+  },
+  "logs": {
+    "system": {
+      "log_group": "/ec2/ec2-failure-demo/system",
+      "log_stream": "i-047b21366545ce721",
+      "lines": [
+        "2026-11-15T15:21:23.574468+00:00 ec2-failure-demo-app kernel: python3 invoked oom-killer: gfp_mask=0x440dc0(GFP_KERNEL_ACCOUNT|__GFP_ZERO|__GFP_COMP), order=0, oom_score_adj=0",
+        "2026-11-15T15:21:23.577717+00:00 ec2-failure-demo-app kernel: oom-kill:constraint=CONSTRAINT_NONE,nodemask=(null),cpuset=/,mems_allowed=0,global_oom,task_memcg=/system.slice/orders-api.service,task=python3,pid=4525,uid=999",
+        "2026-11-15T15:21:23.577718+00:00 ec2-failure-demo-app kernel: Out of memory: Killed process 4525 (python3) total-vm:1850320kB, anon-rss:1600620kB, file-rss:2752kB, shmem-rss:0kB, UID:999 pgtables:3244kB oom_score_adj:0",
+        "2026-11-15T15:21:23.678146+00:00 ec2-failure-demo-app systemd[1]: orders-api.service: Main process exited, code=killed, status=9/KILL",
+        "2026-11-15T15:21:23.679090+00:00 ec2-failure-demo-app systemd[1]: orders-api.service: Failed with result 'signal'.",
+        "2026-11-15T15:21:23.687860+00:00 ec2-failure-demo-app systemd[1]: orders-api.service: Consumed 1.532s CPU time, 1.5G memory peak, 0B memory swap peak.",
+        "2026-11-15T15:21:28.880974+00:00 ec2-failure-demo-app systemd[1]: orders-api.service: Scheduled restart job, restart counter is at 2.",
+        "2026-11-15T15:21:28.892917+00:00 ec2-failure-demo-app systemd[1]: Started orders-api.service - orders-api dummy service (EC2 failure demo)."
+      ]
+    },
+    "app": {
+      "log_group": "/ec2/ec2-failure-demo/orders-api",
+      "log_stream": "i-047b21366545ce721",
+      "lines": [
+        "{\"ts\": \"2026-11-15T15:14:52.320Z\", \"level\": \"WARNING\", \"service\": \"orders-api\", \"host\": \"ec2-failure-demo-app\", \"pid\": 4525, \"msg\": \"gradual leak started\", \"rss_mb\": 20.6, \"step_mb\": 20, \"interval_s\": 5.0}",
+        "{\"ts\": \"2026-11-15T15:14:57.334Z\", \"level\": \"INFO\", \"service\": \"orders-api\", \"host\": \"ec2-failure-demo-app\", \"pid\": 4525, \"msg\": \"order cache grew\", \"rss_mb\": 40.7, \"held_mb\": 20, \"mem_available_pct\": 78.0}",
+        "... (one line every 5 s: held_mb 40 \u2192 1520, mem_available_pct 76.7 \u2192 1.8) ...",
+        "{\"ts\": \"2026-11-15T15:21:18.506Z\", \"level\": \"WARNING\", \"service\": \"orders-api\", \"host\": \"ec2-failure-demo-app\", \"pid\": 4525, \"msg\": \"order cache grew\", \"rss_mb\": 1554.6, \"held_mb\": 1540, \"mem_available_pct\": 1.4}",
+        "{\"ts\": \"2026-11-15T15:21:29.263Z\", \"level\": \"INFO\", \"service\": \"orders-api\", \"host\": \"ec2-failure-demo-app\", \"pid\": 4802, \"msg\": \"service started\", \"rss_mb\": 19.5, \"listen\": \"127.0.0.1:8000\", \"mem_available_pct\": 80.1}"
+      ]
+    }
+  }
+}

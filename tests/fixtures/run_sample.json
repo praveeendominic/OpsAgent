@@ -1,0 +1,424 @@
+{
+  "incident_id": "inc-20261115-152207-oom-047b21",
+  "event_id": "evt-295bb863-5296-5d5a-9933-efdc503f0525",
+  "brand": "The Ark Enterprise",
+  "model": "azure/gpt-4o",
+  "started_at": "2026-11-15T15:22:09.412+00:00",
+  "finished_at": "2026-11-15T15:26:41.908+00:00",
+  "status": "done",
+  "duration_s": 272.496,
+  "steps": [
+    {
+      "name": "intake",
+      "kind": "flow",
+      "crew": null,
+      "status": "done",
+      "started_at": "2026-11-15T15:22:09.415+00:00",
+      "t_start": 0.003,
+      "ended_at": "2026-11-15T15:22:09.902+00:00",
+      "t_end": 0.49,
+      "duration_s": 0.487,
+      "inputs": {"event_id": "evt-295bb863-5296-5d5a-9933-efdc503f0525", "event_type": "memory", "instance_id": "i-047b21366545ce721"},
+      "output": {"incident_id": "inc-20261115-152207-oom-047b21", "duplicate_of": null},
+      "usage": {},
+      "cost_usd": 0.0,
+      "error": null
+    },
+    {
+      "name": "triage",
+      "kind": "crew",
+      "crew": "Triage",
+      "status": "done",
+      "started_at": "2026-11-15T15:22:09.905+00:00",
+      "t_start": 0.493,
+      "ended_at": "2026-11-15T15:22:41.117+00:00",
+      "t_end": 31.705,
+      "duration_s": 31.212,
+      "inputs": {"event_id": "evt-295bb863-5296-5d5a-9933-efdc503f0525", "rule": "oom_kill_with_leak"},
+      "output": {"severity": "critical", "reason": "memory", "sub_reason": "application_leak_oom_kill"},
+      "usage": {"prompt_tokens": 6120, "completion_tokens": 410, "total_tokens": 6530, "successful_requests": 2},
+      "cost_usd": 0.0194,
+      "error": null
+    },
+    {
+      "name": "page_stage1",
+      "kind": "flow",
+      "crew": "Incident Bridge",
+      "status": "done",
+      "started_at": "2026-11-15T15:22:41.120+00:00",
+      "t_start": 31.708,
+      "ended_at": "2026-11-15T15:22:57.661+00:00",
+      "t_end": 48.249,
+      "duration_s": 16.541,
+      "inputs": {"stage": "stage1", "channels": ["outbox", "teams"]},
+      "output": {"delivered": 2, "failed": 0},
+      "usage": {"prompt_tokens": 2980, "completion_tokens": 640, "total_tokens": 3620, "successful_requests": 1},
+      "cost_usd": 0.01385,
+      "error": null
+    },
+    {
+      "name": "diagnose",
+      "kind": "crew",
+      "crew": "Diagnostics",
+      "status": "done",
+      "started_at": "2026-11-15T15:22:57.665+00:00",
+      "t_start": 48.253,
+      "ended_at": "2026-11-15T15:25:02.994+00:00",
+      "t_end": 173.582,
+      "duration_s": 125.329,
+      "inputs": {"triage_digest": "CRITICAL memory/application_leak_oom_kill on i-047b21366545ce721; service orders-api; OOM killed python3 pid 4525 at 1563 MB; leak 234 MB/min, peak 1555 MB; restart counter 2"},
+      "output": {"root_cause_category": "application_memory_leak", "confidence": "high", "fixes": 2, "citations": 3},
+      "usage": {"prompt_tokens": 24310, "completion_tokens": 2890, "total_tokens": 27200, "successful_requests": 6},
+      "cost_usd": 0.089675,
+      "error": null
+    },
+    {
+      "name": "correlate_code",
+      "kind": "crew",
+      "crew": "Code Correlation",
+      "status": "done",
+      "started_at": "2026-11-15T15:22:57.670+00:00",
+      "t_start": 48.258,
+      "ended_at": "2026-11-15T15:24:31.202+00:00",
+      "t_end": 141.79,
+      "duration_s": 93.532,
+      "inputs": {"repository": "ec2-failure-demo/orders-api", "symbols": ["order cache grew", "gradual leak started"]},
+      "output": {"verdict": "code", "confidence": 0.86, "pattern": "unbounded_growth"},
+      "usage": {"prompt_tokens": 18740, "completion_tokens": 1960, "total_tokens": 20700, "successful_requests": 5},
+      "cost_usd": 0.06645,
+      "error": null
+    },
+    {
+      "name": "page_stage2",
+      "kind": "flow",
+      "crew": "Incident Bridge",
+      "status": "done",
+      "started_at": "2026-11-15T15:25:02.998+00:00",
+      "t_start": 173.586,
+      "ended_at": "2026-11-15T15:25:31.407+00:00",
+      "t_end": 201.995,
+      "duration_s": 28.409,
+      "inputs": {"stage": "stage2", "channels": ["outbox", "teams", "email"]},
+      "output": {"delivered": 2, "failed": 1},
+      "usage": {"prompt_tokens": 5410, "completion_tokens": 1180, "total_tokens": 6590, "successful_requests": 1},
+      "cost_usd": 0.025325,
+      "error": null
+    },
+    {
+      "name": "close",
+      "kind": "crew",
+      "crew": "Knowledge",
+      "status": "done",
+      "started_at": "2026-11-15T15:25:31.410+00:00",
+      "t_start": 201.998,
+      "ended_at": "2026-11-15T15:26:41.900+00:00",
+      "t_end": 272.488,
+      "duration_s": 70.49,
+      "inputs": {"namespace": "incidents"},
+      "output": {"kb_record": "inc-20261115-152207-oom-047b21", "label": "pending"},
+      "usage": {"prompt_tokens": 7120, "completion_tokens": 820, "total_tokens": 7940, "successful_requests": 2},
+      "cost_usd": 0.026,
+      "error": null
+    }
+  ],
+  "artifacts": {
+    "triage": {
+      "schema_version": "triage-1.0",
+      "event_id": "evt-295bb863-5296-5d5a-9933-efdc503f0525",
+      "incident_id": "inc-20261115-152207-oom-047b21",
+      "provider": "aws",
+      "event_type": "memory",
+      "alarm": {
+        "name": "ec2-failure-demo-oom-kill-system",
+        "state": "ALARM",
+        "fired_at": "2026-11-15T15:22:07Z",
+        "reason": "Threshold Crossed: 1 out of the last 1 datapoints [1.0 (15/11/26 15:21:00)] was greater than or equal to the threshold (1.0)"
+      },
+      "instance": {
+        "instance_id": "i-047b21366545ce721",
+        "instance_type": "t3.small",
+        "total_memory_mb": 2048,
+        "vcpus": 2,
+        "swap_mb": 0,
+        "region": "eu-west-1",
+        "tags": {"app": "orders-api", "owner": "orders-team", "env": "demo"},
+        "units": {"orders-api.service": {"restart": "on-failure", "memory_max": null}},
+        "source": "inventory"
+      },
+      "window": {"start": "2026-11-15T15:07:07Z", "end": "2026-11-15T15:23:07Z"},
+      "service": "orders-api",
+      "owner": "orders-team",
+      "evidence": {
+        "oom_events": [
+          {
+            "timestamp": "2026-11-15T15:21:23.577718+00:00",
+            "killed_process": "python3",
+            "killed_pid": 4525,
+            "anon_rss_kb": 1600620,
+            "total_vm_kb": 1850320,
+            "file_rss_kb": 2752,
+            "cgroup": "/system.slice/orders-api.service",
+            "uid": 999,
+            "invoked_by": "python3",
+            "raw": "Out of memory: Killed process 4525 (python3) total-vm:1850320kB, anon-rss:1600620kB, file-rss:2752kB, shmem-rss:0kB, UID:999 pgtables:3244kB oom_score_adj:0"
+          }
+        ],
+        "service_events": [
+          {"timestamp": "2026-11-15T15:21:23.678146+00:00", "unit": "orders-api.service", "event": "killed", "result": null, "signal": "9/KILL", "restart_counter": null, "memory_peak_mb": null, "cpu_seconds": null, "detail": "Main process exited, code=killed, status=9/KILL"},
+          {"timestamp": "2026-11-15T15:21:23.679090+00:00", "unit": "orders-api.service", "event": "failed", "result": "signal", "signal": null, "restart_counter": null, "memory_peak_mb": null, "cpu_seconds": null, "detail": "Failed with result 'signal'."},
+          {"timestamp": "2026-11-15T15:21:23.687860+00:00", "unit": "orders-api.service", "event": "consumed", "result": null, "signal": null, "restart_counter": null, "memory_peak_mb": 1536.0, "cpu_seconds": 1.532, "detail": "Consumed 1.532s CPU time, 1.5G memory peak"},
+          {"timestamp": "2026-11-15T15:21:28.880974+00:00", "unit": "orders-api.service", "event": "restart_scheduled", "result": null, "signal": null, "restart_counter": 2, "memory_peak_mb": null, "cpu_seconds": null, "detail": "Scheduled restart job, restart counter is at 2."},
+          {"timestamp": "2026-11-15T15:21:28.892917+00:00", "unit": "orders-api.service", "event": "started", "result": null, "signal": null, "restart_counter": null, "memory_peak_mb": null, "cpu_seconds": null, "detail": "Started orders-api.service"}
+        ],
+        "leak_profile": {
+          "start": "2026-11-15T15:14:52.320Z",
+          "end": "2026-11-15T15:21:18.506Z",
+          "first_rss_mb": 20.6,
+          "peak_rss_mb": 1554.6,
+          "slope_mb_per_min": 238.4,
+          "mem_available_pct_at_kill": 1.4,
+          "samples": 77,
+          "step_mb": 20.0,
+          "interval_s": 5.0
+        },
+        "top_errors": [
+          {"message": "order cache grew", "count": 76, "level": "WARNING", "last_seen": "2026-11-15T15:21:18.506Z"},
+          {"message": "gradual leak started", "count": 1, "level": "WARNING", "last_seen": "2026-11-15T15:14:52.320Z"}
+        ],
+        "restart_count": 2,
+        "notes": ["service restarted by systemd 5 s after the kill; the leak restarts with the service"]
+      },
+      "classification": {
+        "reason": "memory",
+        "sub_reason": "application_leak_oom_kill",
+        "confidence": "high",
+        "rule": "oom_kill_with_leak",
+        "rationale": "kernel oom-killer line names the service cgroup; app log shows monotonic RSS growth of 20 MB every 5 s until mem_available fell below 2 %"
+      },
+      "severity": "critical",
+      "summary": "orders-api on i-047b21366545ce721 was killed by the kernel OOM killer after its in-process order cache grew by about 20 MB every 5 seconds for six minutes. systemd restarted the service; the leak will recur until the cache is bounded.",
+      "analyst_agrees": true,
+      "analyst_note": "",
+      "created_at": "2026-11-15T15:22:41.100+00:00"
+    },
+    "diagnosis": {
+      "schema_version": "diagnosis-1.0",
+      "event_id": "evt-295bb863-5296-5d5a-9933-efdc503f0525",
+      "incident_id": "inc-20261115-152207-oom-047b21",
+      "provider": "aws",
+      "event_type": "memory",
+      "severity": "critical",
+      "timeline": [
+        {"ts": "2026-11-15T15:14:52Z", "source": "app log", "what": "orders-api logs 'gradual leak started' at 20.6 MB RSS, step 20 MB every 5 s"},
+        {"ts": "2026-11-15T15:21:18Z", "source": "app log", "what": "'order cache grew' with rss_mb 1554.6 and mem_available_pct 1.4"},
+        {"ts": "2026-11-15T15:21:23Z", "source": "system log", "what": "kernel oom-killer kills python3 pid 4525 (anon-rss 1.56 GB) in /system.slice/orders-api.service"},
+        {"ts": "2026-11-15T15:21:28Z", "source": "system log", "what": "systemd schedules restart, counter 2; service back at 19.5 MB RSS"},
+        {"ts": "2026-11-15T15:22:07Z", "source": "alarm", "what": "CloudWatch alarm ec2-failure-demo-oom-kill-system transitions to ALARM"}
+      ],
+      "root_cause": {
+        "summary": "The orders-api process keeps a per-order cache that is never evicted, so resident memory grows linearly at about 240 MB per minute until the 2 GB t3.small is exhausted and the kernel kills the process. systemd restarts it, which clears memory but restarts the leak.",
+        "category": "application_memory_leak",
+        "contributing": [
+          "orders-api.service has no MemoryMax or MemoryHigh, so the kernel OOM killer rather than systemd handles the exhaustion",
+          "t3.small has 2 GB RAM and no swap; the headroom is consumed in six minutes"
+        ],
+        "confidence": "high"
+      },
+      "citations": [
+        {"title": "systemd.resource-control: MemoryMax and MemoryHigh", "source": "kb://docs/systemd-resource-control.md#memorymax", "snippet": "MemoryHigh throttles the unit before MemoryMax terminates it, giving the application a chance to shed memory."},
+        {"title": "Amazon EC2 memory metrics with the CloudWatch agent", "source": "https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/metrics-collected-by-CloudWatch-agent.html", "snippet": "mem_available_percent is the percentage of memory that is available for starting new applications without swapping."},
+        {"title": "Closed incident inc-20261102-cache-leak (orders-api, accepted)", "source": "kb://incidents/inc-20261102-091533-oom-9ad22c", "snippet": "Same cgroup, same growth pattern; the durable fix was a bounded LRU on the order cache."}
+      ],
+      "fixes": [
+        {
+          "horizon": "immediate",
+          "owner": "ops",
+          "action": "set_unit_memory_limits",
+          "detail": "Put a systemd drop-in on orders-api.service so the unit is throttled at 1.2 GB and restarted cleanly at 1.5 GB instead of being hit by the kernel OOM killer.",
+          "command": "sudo systemctl set-property orders-api.service MemoryHigh=1200M MemoryMax=1500M\nsudo systemctl daemon-reload && sudo systemctl restart orders-api.service",
+          "reversal": "sudo systemctl revert orders-api.service && sudo systemctl restart orders-api.service"
+        },
+        {
+          "horizon": "durable",
+          "owner": "dev",
+          "action": "bound_cache",
+          "detail": "Replace the unbounded dict in the order cache with a size-bounded LRU (for example cachetools.LRUCache(maxsize=10000)) and add an eviction metric.",
+          "command": null,
+          "reversal": null
+        }
+      ],
+      "classification_agreement": "agreed",
+      "notes": "A resize to t3.medium would only delay the kill by about four minutes and is not recommended.",
+      "created_at": "2026-11-15T15:25:02.980+00:00"
+    },
+    "code_correlation": {
+      "schema_version": "code-correlation-1.0",
+      "event_id": "evt-295bb863-5296-5d5a-9933-efdc503f0525",
+      "incident_id": "inc-20261115-152207-oom-047b21",
+      "repository": "ec2-failure-demo/orders-api",
+      "verdict": "code",
+      "confidence": 0.86,
+      "pattern": "unbounded_growth",
+      "locations": [
+        {
+          "file": "orders_api/cache.py",
+          "symbol": "OrderCache.remember",
+          "line": 41,
+          "excerpt": "def remember(self, order_id: str, payload: bytes) -> None:\n    self._held[order_id] = payload\n    self._held_mb += len(payload) / 1_048_576\n    log.warning(\"order cache grew\", extra={\"held_mb\": self._held_mb})",
+          "why": "writes into a plain dict with no eviction; the log line matches the 'order cache grew' WARNING seen 76 times before the kill"
+        },
+        {
+          "file": "orders_api/worker.py",
+          "symbol": "leak_loop",
+          "line": 18,
+          "excerpt": "while True:\n    cache.remember(uuid4().hex, bytearray(STEP_MB * 1_048_576))\n    time.sleep(INTERVAL_S)",
+          "why": "calls remember() every INTERVAL_S seconds with STEP_MB of fresh bytes, which matches the 20 MB per 5 s growth in the leak profile"
+        }
+      ],
+      "explanation": "OrderCache.remember stores every payload in a dict that is never trimmed, and leak_loop feeds it 20 MB every 5 seconds. Resident memory therefore grows without bound until the kernel kills the process, exactly as the triage leak profile shows.",
+      "developer_action": "Bound OrderCache with an LRU (maxsize or max_bytes) and evict in remember(); add a unit test that asserts held_mb stays under the limit after 10,000 inserts.",
+      "recent_commits": [
+        {"sha": "a1f3c9e", "date": "2026-11-12", "message": "cache: keep full order payload for replay", "files": ["orders_api/cache.py"]},
+        {"sha": "7d02b44", "date": "2026-11-10", "message": "worker: configurable leak interval for demo", "files": ["orders_api/worker.py"]}
+      ],
+      "created_at": "2026-11-15T15:24:31.190+00:00"
+    },
+    "package_stage1": {
+      "schema_version": "incident-package-1.0",
+      "incident_id": "inc-20261115-152207-oom-047b21",
+      "event_id": "evt-295bb863-5296-5d5a-9933-efdc503f0525",
+      "stage": "stage1",
+      "severity": "critical",
+      "service": "orders-api",
+      "instance_id": "i-047b21366545ce721",
+      "headline": "CRITICAL: orders-api OOM-killed on i-047b21366545ce721 (memory leak, restart counter 2)",
+      "summary": "orders-api on i-047b21366545ce721 was killed by the kernel OOM killer after its in-process order cache grew by about 20 MB every 5 seconds for six minutes. systemd restarted the service; the leak will recur until the cache is bounded.",
+      "triage": {
+        "schema_version": "triage-1.0",
+        "event_id": "evt-295bb863-5296-5d5a-9933-efdc503f0525",
+        "incident_id": "inc-20261115-152207-oom-047b21",
+        "event_type": "memory",
+        "severity": "critical",
+        "service": "orders-api",
+        "owner": "orders-team",
+        "instance": {"instance_id": "i-047b21366545ce721", "instance_type": "t3.small", "total_memory_mb": 2048, "source": "inventory"},
+        "classification": {"reason": "memory", "sub_reason": "application_leak_oom_kill", "confidence": "high", "rule": "oom_kill_with_leak", "rationale": "kernel oom-killer line names the service cgroup; app log shows monotonic RSS growth"}
+      },
+      "diagnosis": null,
+      "code_correlation": null,
+      "recommended_fix": null,
+      "durable_fix": null,
+      "timings": {"stage1": 48.2},
+      "trace_url": null,
+      "brand": "The Ark Enterprise",
+      "created_at": "2026-11-15T15:22:57.650+00:00"
+    },
+    "package_stage2": {
+      "schema_version": "incident-package-1.0",
+      "incident_id": "inc-20261115-152207-oom-047b21",
+      "event_id": "evt-295bb863-5296-5d5a-9933-efdc503f0525",
+      "stage": "stage2",
+      "severity": "critical",
+      "service": "orders-api",
+      "instance_id": "i-047b21366545ce721",
+      "headline": "Root cause: unbounded order cache in orders-api (code, 86 %)",
+      "summary": "The orders-api process keeps a per-order cache that is never evicted, so resident memory grows at about 240 MB per minute until the 2 GB instance is exhausted and the kernel kills the process. Immediate fix: cap the unit with MemoryHigh/MemoryMax. Durable fix: bound the cache in OrderCache.remember.",
+      "triage": {
+        "schema_version": "triage-1.0",
+        "event_id": "evt-295bb863-5296-5d5a-9933-efdc503f0525",
+        "incident_id": "inc-20261115-152207-oom-047b21",
+        "event_type": "memory",
+        "severity": "critical",
+        "service": "orders-api",
+        "owner": "orders-team",
+        "instance": {"instance_id": "i-047b21366545ce721", "instance_type": "t3.small", "total_memory_mb": 2048, "source": "inventory"},
+        "classification": {"reason": "memory", "sub_reason": "application_leak_oom_kill", "confidence": "high", "rule": "oom_kill_with_leak", "rationale": "kernel oom-killer line names the service cgroup; app log shows monotonic RSS growth"}
+      },
+      "diagnosis": {
+        "root_cause": {
+          "summary": "The orders-api process keeps a per-order cache that is never evicted, so resident memory grows linearly at about 240 MB per minute until the 2 GB t3.small is exhausted and the kernel kills the process.",
+          "category": "application_memory_leak",
+          "confidence": "high"
+        }
+      },
+      "code_correlation": {
+        "verdict": "code",
+        "confidence": 0.86,
+        "pattern": "unbounded_growth",
+        "locations": [{"file": "orders_api/cache.py", "symbol": "OrderCache.remember", "line": 41}],
+        "developer_action": "Bound OrderCache with an LRU and evict in remember()."
+      },
+      "recommended_fix": {
+        "horizon": "immediate",
+        "owner": "ops",
+        "action": "set_unit_memory_limits",
+        "detail": "Put a systemd drop-in on orders-api.service so the unit is throttled at 1.2 GB and restarted cleanly at 1.5 GB.",
+        "command": "sudo systemctl set-property orders-api.service MemoryHigh=1200M MemoryMax=1500M",
+        "reversal": "sudo systemctl revert orders-api.service"
+      },
+      "durable_fix": {
+        "horizon": "durable",
+        "owner": "dev",
+        "action": "bound_cache",
+        "detail": "Replace the unbounded dict in the order cache with a size-bounded LRU and add an eviction metric.",
+        "command": null,
+        "reversal": null
+      },
+      "timings": {"stage1": 48.2, "stage2": 202.0},
+      "trace_url": null,
+      "brand": "The Ark Enterprise",
+      "created_at": "2026-11-15T15:25:31.400+00:00"
+    },
+    "kb_record": {
+      "schema_version": "kb-record-1.0",
+      "incident_id": "inc-20261115-152207-oom-047b21",
+      "event_id": "evt-295bb863-5296-5d5a-9933-efdc503f0525",
+      "provider": "aws",
+      "event_type": "memory",
+      "service": "orders-api",
+      "severity": "critical",
+      "digest": "CRITICAL memory/application_leak_oom_kill on i-047b21366545ce721; service orders-api; OOM killed python3 pid 4525 at 1563 MB; leak 238 MB/min, peak 1555 MB; restart counter 2",
+      "root_cause_summary": "Unbounded per-order cache in orders-api grows about 240 MB/min until the kernel OOM killer terminates the process.",
+      "root_cause_category": "application_memory_leak",
+      "verdict": "code",
+      "code_location": "orders_api/cache.py:41 OrderCache.remember",
+      "immediate_fix": "systemctl set-property orders-api.service MemoryHigh=1200M MemoryMax=1500M",
+      "durable_fix": "bound OrderCache with an LRU and evict in remember()",
+      "outcome": null,
+      "citations": [
+        "kb://docs/systemd-resource-control.md#memorymax",
+        "https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/metrics-collected-by-CloudWatch-agent.html",
+        "kb://incidents/inc-20261102-091533-oom-9ad22c"
+      ],
+      "label": "pending",
+      "labelled_by": null,
+      "labelled_at": null,
+      "tags": ["oom", "memory-leak", "orders-api", "systemd"],
+      "created_at": "2026-11-15T15:26:41.880+00:00"
+    }
+  },
+  "receipts": [
+    {"channel": "outbox", "stage": "stage1", "ok": true, "detail": "card written", "target": "outbox/inc-20261115-152207-oom-047b21/stage1.card.json", "sent_at": "2026-11-15T15:22:57.655+00:00", "artifact": "outbox/inc-20261115-152207-oom-047b21/stage1.card.json"},
+    {"channel": "teams", "stage": "stage1", "ok": true, "detail": "202 Accepted", "target": "incoming webhook (ops-incidents)", "sent_at": "2026-11-15T15:22:57.660+00:00", "artifact": null},
+    {"channel": "outbox", "stage": "stage2", "ok": true, "detail": "card and email written", "target": "outbox/inc-20261115-152207-oom-047b21/stage2.card.json", "sent_at": "2026-11-15T15:25:31.402+00:00", "artifact": "outbox/inc-20261115-152207-oom-047b21/stage2.card.json"},
+    {"channel": "teams", "stage": "stage2", "ok": true, "detail": "202 Accepted", "target": "incoming webhook (ops-incidents)", "sent_at": "2026-11-15T15:25:31.405+00:00", "artifact": null},
+    {"channel": "email", "stage": "stage2", "ok": false, "detail": "SMTP not configured; rendered to outbox only", "target": "ops-oncall (SMTP_TO)", "sent_at": "2026-11-15T15:25:31.406+00:00", "artifact": "outbox/inc-20261115-152207-oom-047b21/stage2.email.html"}
+  ],
+  "timings": {
+    "intake": 0.49,
+    "triage": 31.705,
+    "stage1": 48.249,
+    "diagnosis": 173.582,
+    "code_correlation": 141.79,
+    "stage2": 201.995,
+    "closed": 272.488
+  },
+  "totals": {
+    "prompt_tokens": 64680,
+    "completion_tokens": 7900,
+    "total_tokens": 72580,
+    "cost_usd": 0.2407,
+    "llm_calls": 17
+  },
+  "errors": []
+}

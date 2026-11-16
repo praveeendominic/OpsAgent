@@ -1,0 +1,27 @@
+[Unit]
+Description=orders-api (FastAPI order service)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=orders
+Group=orders
+WorkingDirectory=/opt/orders-api
+Environment=PORT=8080
+Environment=LOG_LEVEL=INFO
+EnvironmentFile=-/etc/orders-api/env
+ExecStart=/opt/orders-api/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080 --log-config /dev/null
+Restart=always
+RestartSec=5
+# NOTE: MemoryHigh= / MemoryMax= are intentionally absent. Without a cgroup memory
+# limit the service grows until the kernel OOM killer picks it, and Restart=always
+# brings it straight back, so the host sees a kill/restart loop instead of a
+# contained failure. Adding e.g. MemoryHigh=1G and MemoryMax=1.5G would bound the
+# blast radius but would not fix the leak in app/orders/cache.py.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=orders-api
+
+[Install]
+WantedBy=multi-user.target

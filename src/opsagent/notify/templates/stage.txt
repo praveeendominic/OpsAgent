@@ -1,0 +1,73 @@
+{{ brand }} | OpsAgent Incident Bridge | {{ stage_label }}
+{{ "=" * 72 }}
+
+{{ severity }}: {{ service }} on {{ instance_id }}
+{{ headline }}
+
+{% for fact in facts %}
+{{ "%-20s"|format(fact.title ~ ":") }} {{ fact.value }}
+{% endfor %}
+
+{{ summary }}
+{% if diagnosis %}
+
+ROOT CAUSE
+----------
+{{ diagnosis.root_cause.summary }}
+Category: {{ diagnosis.root_cause.category }} | Confidence: {{ diagnosis.root_cause.confidence }}
+{% if diagnosis.citations %}
+
+Citations:
+{% for c in diagnosis.citations[:5] %}
+- {{ c.title }} ({{ c.source }})
+{% endfor %}
+{% endif %}
+{% endif %}
+{% if code_correlation %}
+
+CODE VERDICT
+------------
+Verdict: {{ code_correlation.verdict }} | Confidence: {{ "%.0f%%"|format(code_correlation.confidence * 100) }}
+{% for loc in code_correlation.locations[:3] %}
+Location: {{ loc.file }}{% if loc.line %}:{{ loc.line }}{% endif %}{% if loc.symbol %} ({{ loc.symbol }}){% endif %}
+
+{% endfor %}
+Developer action: {{ code_correlation.developer_action }}
+{{ code_correlation.explanation }}
+{% endif %}
+{% if recommended_fix %}
+
+RECOMMENDED IMMEDIATE FIX
+-------------------------
+Action: {{ recommended_fix.action }} (owner: {{ recommended_fix.owner }})
+{{ recommended_fix.detail }}
+{% if recommended_fix.command %}
+
+{{ recommended_fix.command }}
+{% endif %}
+{% if recommended_fix.reversal %}
+Reversal: {{ recommended_fix.reversal }}
+{% endif %}
+{% endif %}
+{% if durable_fix %}
+
+DURABLE FIX
+-----------
+Action: {{ durable_fix.action }} (owner: {{ durable_fix.owner }})
+{{ durable_fix.detail }}
+{% if durable_fix.command %}
+
+{{ durable_fix.command }}
+{% endif %}
+{% endif %}
+{% if trace_url %}
+
+Trace: {{ trace_url }}
+{% endif %}
+{% if stage == "stage1" %}
+
+Root cause, code verdict and the recommended fix follow in stage 2.
+{% endif %}
+
+--
+Sent by OpsAgent for {{ brand }}. Incident {{ incident_id }}, event {{ event_id }}.

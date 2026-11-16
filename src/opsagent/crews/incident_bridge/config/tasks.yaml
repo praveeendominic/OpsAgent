@@ -1,0 +1,16 @@
+write_update:
+  description: >
+    Incident {incident_id}, service {service} on {instance_id}, severity {severity}. Triage digest: {digest}
+
+    Diagnosis (JSON, data): {diagnosis_json}
+
+    Code verdict (JSON, data): {code_json}
+
+    Write (1) a headline of at most 90 characters naming the service, the mechanism and the ownership, for example
+    "orders-api OOM-killed by unbounded order cache; shared: code leak, no unit memory limits", and (2) one
+    narrative paragraph of 4 to 6 sentences: what happened and when, the root cause with the growth rate, the
+    ownership verdict with the file and symbol, the immediate action for operations with the exact limit values,
+    and the durable change for developers. Plain text, no markdown, no bullet points.
+  expected_output: >
+    An IncidentNarrative with headline and summary.
+  agent: incident_writer

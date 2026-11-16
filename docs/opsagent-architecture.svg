@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 1019" width="1160" height="1019" font-family="Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-label="OpsAgent: one Flow, six crews, from alarm to an approved fix in under five minutes">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#5F6B7A"/></marker><marker id="open" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10" fill="none" stroke="#5F6B7A" stroke-width="1.5"/></marker></defs>
+<rect width="1160" height="1019" fill="#FFFFFF"/>
+<text x="30" y="40" font-size="18" font-weight="700" fill="#1F2933" text-anchor="start">OpsAgent: one Flow, six crews, from alarm to an approved fix in under five minutes</text>
+<text x="30" y="60" font-size="11" font-weight="400" fill="#5F6B7A" text-anchor="start">Orange outline = the only components that can change infrastructure, used after a human approval. Only the CloudWatch agent, metrics, logs and alarms exist today; everything from the enricher down is proposed.</text>
+<rect x="30" y="70" width="1100" height="125" rx="6" fill="#FFFFFF" stroke="#607D8B" stroke-width="1.5"/>
+<path d="M36 70 H1124 a6 6 0 0 1 6 6 V102 H30 V76 a6 6 0 0 1 6 -6 z" fill="#ECEFF1"/>
+<path d="M30 102 H1130" stroke="#607D8B" stroke-width="1.5"/>
+<text x="42" y="91" font-size="13" font-weight="700" fill="#263238" text-anchor="start">EVENT CAPTURE  ·  native AWS signals, plus the OpsAgent enricher</text>
+<rect x="50.0" y="115" width="250.0" height="64" rx="8" fill="#FFFFFF" stroke="#607D8B" stroke-width="1.5"/>
+<text x="175.0" y="143.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">EC2 instance</text>
+<text x="175.0" y="160.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">CloudWatch agent</text>
+<rect x="320.0" y="115" width="250.0" height="64" rx="8" fill="#FFFFFF" stroke="#607D8B" stroke-width="1.5"/>
+<text x="445.0" y="143.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">CloudWatch</text>
+<text x="445.0" y="160.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">metrics and logs</text>
+<rect x="590.0" y="115" width="250.0" height="64" rx="8" fill="#FFFFFF" stroke="#607D8B" stroke-width="1.5"/>
+<text x="715.0" y="143.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Alarm</text>
+<text x="715.0" y="160.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">EventBridge rule</text>
+<rect x="860.0" y="115" width="250.0" height="64" rx="8" fill="#FFFFFF" stroke="#607D8B" stroke-width="1.5"/>
+<text x="985.0" y="143.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Lambda enricher</text>
+<text x="985.0" y="160.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">15 min evidence window</text>
+<path d="M580.0 195 V235" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<text x="590.0" y="219.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="start">raw-1.0 event</text>
+<rect x="30" y="235" width="1100" height="125" rx="6" fill="#FFFFFF" stroke="#1E88E5" stroke-width="1.5"/>
+<path d="M36 235 H1124 a6 6 0 0 1 6 6 V267 H30 V241 a6 6 0 0 1 6 -6 z" fill="#E3F2FD"/>
+<path d="M30 267 H1130" stroke="#1E88E5" stroke-width="1.5"/>
+<text x="42" y="256" font-size="13" font-weight="700" fill="#0D47A1" text-anchor="start">INGESTION  ·  durable hand-off into the Flow</text>
+<rect x="50.0" y="280" width="250.0" height="64" rx="8" fill="#FFFFFF" stroke="#1E88E5" stroke-width="1.5"/>
+<text x="175.0" y="308.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">SQS FIFO queue</text>
+<text x="175.0" y="325.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">dedupe on event_id</text>
+<rect x="320.0" y="280" width="250.0" height="64" rx="8" fill="#FFFFFF" stroke="#1E88E5" stroke-width="1.5"/>
+<text x="445.0" y="308.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Flow intake</text>
+<text x="445.0" y="325.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">validate, parse, classify</text>
+<rect x="590.0" y="280" width="250.0" height="64" rx="8" fill="#FFFFFF" stroke="#1E88E5" stroke-width="1.5"/>
+<text x="715.0" y="308.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Flow state</text>
+<text x="715.0" y="325.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">Postgres, resumable</text>
+<rect x="860.0" y="280" width="250.0" height="64" rx="8" fill="#FFFFFF" stroke="#1E88E5" stroke-width="1.5"/>
+<text x="985.0" y="308.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Watchdog</text>
+<text x="985.0" y="325.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">delay notice at 5 min</text>
+<path d="M580.0 360 V400" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<text x="590.0" y="384.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="start">kickoff_async(event)</text>
+<rect x="30" y="400" width="1100" height="249" rx="6" fill="#FFFFFF" stroke="#43A047" stroke-width="1.5"/>
+<path d="M36 400 H1124 a6 6 0 0 1 6 6 V432 H30 V406 a6 6 0 0 1 6 -6 z" fill="#E8F5E9"/>
+<path d="M30 432 H1130" stroke="#43A047" stroke-width="1.5"/>
+<text x="42" y="421" font-size="13" font-weight="700" fill="#1B5E20" text-anchor="start">CREWAI INCIDENTFLOW  ·  one persisted state, six crews</text>
+<rect x="50.0" y="445" width="340.0" height="86" rx="8" fill="#FFFFFF" stroke="#43A047" stroke-width="1.5"/>
+<text x="220.0" y="476.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Triage</text>
+<text x="220.0" y="493.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">Parse, classify by rule, severity</text>
+<text x="220.0" y="510.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">writes triage-1.0</text>
+<rect x="410.0" y="445" width="340.0" height="86" rx="8" fill="#FFFFFF" stroke="#43A047" stroke-width="1.5"/>
+<text x="580.0" y="476.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Diagnostics</text>
+<text x="580.0" y="493.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">RCA with citations from KB</text>
+<text x="580.0" y="510.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">ranks immediate, durable fixes</text>
+<rect x="770.0" y="445" width="340.0" height="86" rx="8" fill="#FFFFFF" stroke="#43A047" stroke-width="1.5"/>
+<text x="940.0" y="476.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Code Correlation</text>
+<text x="940.0" y="493.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">Repo path behind the log line</text>
+<text x="940.0" y="510.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">verdict: code, infra, shared</text>
+<rect x="50.0" y="547" width="340.0" height="86" rx="8" fill="#FFFFFF" stroke="#43A047" stroke-width="1.5"/>
+<text x="220.0" y="578.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Incident Bridge</text>
+<text x="220.0" y="595.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">Stage 1 at T+60 s, stage 2 RCA</text>
+<text x="220.0" y="612.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">Teams, email, xMatters</text>
+<rect x="410.0" y="547" width="340.0" height="86" rx="8" fill="#FFF3E0" stroke="#FB8C00" stroke-width="2.5"/>
+<text x="580.0" y="578.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Self-Healing</text>
+<text x="580.0" y="595.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">Catalog action, dry-run</text>
+<text x="580.0" y="612.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">approve, verify, roll back</text>
+<rect x="770.0" y="547" width="340.0" height="86" rx="8" fill="#FFFFFF" stroke="#43A047" stroke-width="1.5"/>
+<text x="940.0" y="578.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Knowledge</text>
+<text x="940.0" y="595.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">Docs refresh on cadence</text>
+<text x="940.0" y="612.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">incident write-back, label</text>
+<path d="M580.0 649 V689" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<text x="590.0" y="673.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="start">notify;  remediate only after approval</text>
+<rect x="30" y="689" width="1100" height="125" rx="6" fill="#FFFFFF" stroke="#8E24AA" stroke-width="1.5"/>
+<path d="M36 689 H1124 a6 6 0 0 1 6 6 V721 H30 V695 a6 6 0 0 1 6 -6 z" fill="#F3E5F5"/>
+<path d="M30 721 H1130" stroke="#8E24AA" stroke-width="1.5"/>
+<text x="42" y="710" font-size="13" font-weight="700" fill="#4A148C" text-anchor="start">ACTIONS AND NOTIFICATIONS</text>
+<rect x="50.0" y="734" width="196.0" height="64" rx="8" fill="#FFFFFF" stroke="#8E24AA" stroke-width="1.5"/>
+<text x="148.0" y="762.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Teams</text>
+<text x="148.0" y="779.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">adaptive card</text>
+<rect x="266.0" y="734" width="196.0" height="64" rx="8" fill="#FFFFFF" stroke="#8E24AA" stroke-width="1.5"/>
+<text x="364.0" y="762.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Email</text>
+<text x="364.0" y="779.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">SMTP relay</text>
+<rect x="482.0" y="734" width="196.0" height="64" rx="8" fill="#FFFFFF" stroke="#8E24AA" stroke-width="1.5"/>
+<text x="580.0" y="762.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">xMatters</text>
+<text x="580.0" y="779.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">voice page</text>
+<rect x="698.0" y="734" width="196.0" height="64" rx="8" fill="#FFF3E0" stroke="#FB8C00" stroke-width="2.5"/>
+<text x="796.0" y="762.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">SSM + boto3</text>
+<text x="796.0" y="779.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">approved only</text>
+<rect x="914.0" y="734" width="196.0" height="64" rx="8" fill="#FFFFFF" stroke="#8E24AA" stroke-width="1.5"/>
+<text x="1012.0" y="762.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Terraform PR</text>
+<text x="1012.0" y="779.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">durable change</text>
+<rect x="30" y="854" width="1100" height="125" rx="6" fill="#FFFFFF" stroke="#FFB300" stroke-width="1.5"/>
+<path d="M36 854 H1124 a6 6 0 0 1 6 6 V886 H30 V860 a6 6 0 0 1 6 -6 z" fill="#FFF8E1"/>
+<path d="M30 886 H1130" stroke="#FFB300" stroke-width="1.5"/>
+<text x="42" y="875" font-size="13" font-weight="700" fill="#E65100" text-anchor="start">FOUNDATION  ·  read-only tools, model and tracing used by every crew</text>
+<rect x="50.0" y="899" width="196.0" height="64" rx="8" fill="#FFFFFF" stroke="#FFB300" stroke-width="1.5"/>
+<text x="148.0" y="927.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Vector store</text>
+<text x="148.0" y="944.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">Chroma, pgvector</text>
+<rect x="266.0" y="899" width="196.0" height="64" rx="8" fill="#FFFFFF" stroke="#FFB300" stroke-width="1.5"/>
+<text x="364.0" y="927.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">AWS Docs MCP</text>
+<text x="364.0" y="944.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">live documentation</text>
+<rect x="482.0" y="899" width="196.0" height="64" rx="8" fill="#FFFFFF" stroke="#FFB300" stroke-width="1.5"/>
+<text x="580.0" y="927.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">GitHub MCP</text>
+<text x="580.0" y="944.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">read-only repo</text>
+<rect x="698.0" y="899" width="196.0" height="64" rx="8" fill="#FFFFFF" stroke="#FFB300" stroke-width="1.5"/>
+<text x="796.0" y="927.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Azure OpenAI</text>
+<text x="796.0" y="944.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">gpt-4o</text>
+<rect x="914.0" y="899" width="196.0" height="64" rx="8" fill="#FFFFFF" stroke="#FFB300" stroke-width="1.5"/>
+<text x="1012.0" y="927.0" font-size="13" font-weight="700" fill="#1F2933" text-anchor="middle">Langfuse</text>
+<text x="1012.0" y="944.0" font-size="11.5" font-weight="400" fill="#5F6B7A" text-anchor="middle">traces, cost</text>
+</svg>

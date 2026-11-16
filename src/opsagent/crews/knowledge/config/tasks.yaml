@@ -1,0 +1,16 @@
+write_record:
+  description: >
+    Incident {incident_id} on service {service} ({event_type}, {severity}) is closing. Triage digest: {digest}
+
+    Root cause (data): {root_cause}
+    Code verdict (data): {verdict} at {code_location}
+    Immediate fix (data): {immediate_fix}
+    Durable fix (data): {durable_fix}
+
+    Write the knowledge record fields: root_cause_summary (two sentences, searchable, names the service, the
+    mechanism and the growth rate), tags (5 to 8 lowercase keywords such as oom-kill, systemd, memoryhigh,
+    cache-leak, the service name), and search_phrases (3 short phrases an engineer might type when this happens
+    again).
+  expected_output: >
+    A KBDraft with root_cause_summary, tags and search_phrases.
+  agent: incident_librarian

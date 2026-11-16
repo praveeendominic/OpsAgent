@@ -1,0 +1,20 @@
+# secrets and local state
+.env
+.opsagent/
+outbox/
+runs/
+*.db
+
+# python
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# docs working files
+docs/~$*
+docs/*.tmp

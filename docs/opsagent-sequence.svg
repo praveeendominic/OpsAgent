@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1710 1100" width="1710" height="1100" font-family="Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-label="OpsAgent sequence: alarm to knowledge write-back">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#5F6B7A"/></marker><marker id="open" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10" fill="none" stroke="#5F6B7A" stroke-width="1.5"/></marker></defs>
+<rect width="1710" height="1100" fill="#FFFFFF"/>
+<text x="30" y="36" font-size="18" font-weight="700" fill="#1F2933" text-anchor="start">Sequence: alarm to approved fix to knowledge write-back (target times for the demo OOM)</text>
+<rect x="510" y="315" width="1130" height="285" fill="none" stroke="#90A4AE" stroke-width="1.25"/>
+<path d="M510 315 h50 v16 l-6 6 h-44 z" fill="#ECEFF1" stroke="#90A4AE"/>
+<text x="518" y="330" font-size="11" font-weight="700" fill="#455A64" text-anchor="start">par</text>
+<path d="M100.0 110 V1060" stroke="#B0BEC5" stroke-dasharray="6 4"/>
+<rect x="40.0" y="60" width="120" height="50" rx="8" fill="#ECEFF1" stroke="#607D8B" stroke-width="1.5"/>
+<text x="100.0" y="82" font-size="12" font-weight="700" fill="#263238" text-anchor="middle">CloudWatch +</text>
+<text x="100.0" y="97" font-size="12" font-weight="700" fill="#263238" text-anchor="middle">EventBridge</text>
+<path d="M250.0 110 V1060" stroke="#B0BEC5" stroke-dasharray="6 4"/>
+<rect x="190.0" y="60" width="120" height="50" rx="8" fill="#ECEFF1" stroke="#607D8B" stroke-width="1.5"/>
+<text x="250.0" y="82" font-size="12" font-weight="700" fill="#263238" text-anchor="middle">Lambda</text>
+<text x="250.0" y="97" font-size="12" font-weight="700" fill="#263238" text-anchor="middle">enricher</text>
+<path d="M400.0 110 V1060" stroke="#B0BEC5" stroke-dasharray="6 4"/>
+<rect x="340.0" y="60" width="120" height="50" rx="8" fill="#E3F2FD" stroke="#1E88E5" stroke-width="1.5"/>
+<text x="400.0" y="89" font-size="12" font-weight="700" fill="#0D47A1" text-anchor="middle">SQS FIFO</text>
+<path d="M550.0 110 V1060" stroke="#B0BEC5" stroke-dasharray="6 4"/>
+<rect x="490.0" y="60" width="120" height="50" rx="8" fill="#E8F5E9" stroke="#43A047" stroke-width="1.5"/>
+<text x="550.0" y="89" font-size="12" font-weight="700" fill="#1B5E20" text-anchor="middle">Triage crew</text>
+<path d="M700.0 110 V1060" stroke="#B0BEC5" stroke-dasharray="6 4"/>
+<rect x="640.0" y="60" width="120" height="50" rx="8" fill="#E3F2FD" stroke="#1E88E5" stroke-width="1.5"/>
+<text x="700.0" y="89" font-size="12" font-weight="700" fill="#0D47A1" text-anchor="middle">IncidentFlow</text>
+<path d="M850.0 110 V1060" stroke="#B0BEC5" stroke-dasharray="6 4"/>
+<rect x="790.0" y="60" width="120" height="50" rx="8" fill="#E8F5E9" stroke="#43A047" stroke-width="1.5"/>
+<text x="850.0" y="82" font-size="12" font-weight="700" fill="#1B5E20" text-anchor="middle">Diagnostics</text>
+<text x="850.0" y="97" font-size="12" font-weight="700" fill="#1B5E20" text-anchor="middle">crew</text>
+<path d="M1000.0 110 V1060" stroke="#B0BEC5" stroke-dasharray="6 4"/>
+<rect x="940.0" y="60" width="120" height="50" rx="8" fill="#E8F5E9" stroke="#43A047" stroke-width="1.5"/>
+<text x="1000.0" y="82" font-size="12" font-weight="700" fill="#1B5E20" text-anchor="middle">Code Correlation</text>
+<text x="1000.0" y="97" font-size="12" font-weight="700" fill="#1B5E20" text-anchor="middle">crew</text>
+<path d="M1150.0 110 V1060" stroke="#B0BEC5" stroke-dasharray="6 4"/>
+<rect x="1090.0" y="60" width="120" height="50" rx="8" fill="#E8F5E9" stroke="#43A047" stroke-width="1.5"/>
+<text x="1150.0" y="89" font-size="12" font-weight="700" fill="#1B5E20" text-anchor="middle">Incident Bridge</text>
+<path d="M1300.0 110 V1060" stroke="#B0BEC5" stroke-dasharray="6 4"/>
+<rect x="1240.0" y="60" width="120" height="50" rx="8" fill="#F3E5F5" stroke="#8E24AA" stroke-width="1.5"/>
+<text x="1300.0" y="82" font-size="12" font-weight="700" fill="#4A148C" text-anchor="middle">L2 on-call</text>
+<text x="1300.0" y="97" font-size="12" font-weight="700" fill="#4A148C" text-anchor="middle">(Teams, xMatters)</text>
+<path d="M1450.0 110 V1060" stroke="#B0BEC5" stroke-dasharray="6 4"/>
+<rect x="1390.0" y="60" width="120" height="50" rx="8" fill="#FFF3E0" stroke="#FB8C00" stroke-width="1.5"/>
+<text x="1450.0" y="82" font-size="12" font-weight="700" fill="#1B5E20" text-anchor="middle">Self-Healing</text>
+<text x="1450.0" y="97" font-size="12" font-weight="700" fill="#1B5E20" text-anchor="middle">crew</text>
+<path d="M1600.0 110 V1060" stroke="#B0BEC5" stroke-dasharray="6 4"/>
+<rect x="1540.0" y="60" width="120" height="50" rx="8" fill="#E8F5E9" stroke="#43A047" stroke-width="1.5"/>
+<text x="1600.0" y="89" font-size="12" font-weight="700" fill="#1B5E20" text-anchor="middle">Knowledge crew</text>
+<path d="M100.0 130 H250.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<rect x="92.5" y="113" width="165.0" height="15" fill="#FFFFFF"/>
+<text x="175.0" y="125" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">ALARM state change  (T+0)</text>
+<path d="M250.0 170 H400.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<rect x="248.7" y="153" width="152.6" height="15" fill="#FFFFFF"/>
+<text x="325.0" y="165" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">raw-1.0 event  (T+15 s)</text>
+<path d="M400.0 210 H700.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<rect x="483.0" y="193" width="134.0" height="15" fill="#FFFFFF"/>
+<text x="550.0" y="205" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">kickoff_async(event)</text>
+<path d="M700.0 250 H550.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<rect x="601.4" y="233" width="47.2" height="15" fill="#FFFFFF"/>
+<text x="625.0" y="245" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">triage</text>
+<path d="M550.0 290 H700.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" stroke-dasharray="6 4" marker-end="url(#open)"/>
+<rect x="499.1" y="273" width="251.8" height="15" fill="#FFFFFF"/>
+<text x="625.0" y="285" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">triage-1.0, severity critical  (T+45 s)</text>
+<path d="M700.0 350 H1150.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<rect x="885.9" y="333" width="78.2" height="15" fill="#FFFFFF"/>
+<text x="925.0" y="345" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">page_stage1</text>
+<path d="M1150.0 390 H1300.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<rect x="1089.8" y="373" width="270.4" height="15" fill="#FFFFFF"/>
+<text x="1225.0" y="385" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">Teams card, email, xMatters page  (T+60 s)</text>
+<path d="M510 415 H1640" stroke="#90A4AE" stroke-dasharray="6 4"/>
+<text x="518" y="429" font-size="10.5" font-weight="700" fill="#455A64" text-anchor="start">and  diagnose</text>
+<path d="M700.0 445 H850.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<rect x="745.2" y="428" width="59.6" height="15" fill="#FFFFFF"/>
+<text x="775.0" y="440" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">diagnose</text>
+<path d="M850.0 485 H700.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" stroke-dasharray="6 4" marker-end="url(#open)"/>
+<rect x="649.1" y="468" width="251.8" height="15" fill="#FFFFFF"/>
+<text x="775.0" y="480" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">diagnosis-1.0 with citations  (T+3 min)</text>
+<path d="M510 510 H1640" stroke="#90A4AE" stroke-dasharray="6 4"/>
+<text x="518" y="524" font-size="10.5" font-weight="700" fill="#455A64" text-anchor="start">and  correlate code</text>
+<path d="M700.0 540 H1000.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<rect x="801.6" y="523" width="96.8" height="15" fill="#FFFFFF"/>
+<text x="850.0" y="535" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">correlate_code</text>
+<path d="M1000.0 580 H700.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" stroke-dasharray="6 4" marker-end="url(#open)"/>
+<rect x="693.1" y="563" width="313.8" height="15" fill="#FFFFFF"/>
+<text x="850.0" y="575" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">code-correlation-1.0, verdict shared  (T+3.5 min)</text>
+<path d="M700.0 630 H1450.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<rect x="949.1" y="613" width="251.8" height="15" fill="#FFFFFF"/>
+<text x="1075.0" y="625" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">plan_remediation  (listens on diagnose)</text>
+<path d="M1450.0 670 H700.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" stroke-dasharray="6 4" marker-end="url(#open)"/>
+<rect x="967.7" y="653" width="214.6" height="15" fill="#FFFFFF"/>
+<text x="1075.0" y="665" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">remediation-plan-1.0 with dry-run</text>
+<path d="M700.0 710 H1150.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<rect x="845.6" y="693" width="158.8" height="15" fill="#FFFFFF"/>
+<text x="925.0" y="705" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">page_stage2  (and_ join)</text>
+<path d="M1150.0 750 H1300.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<rect x="1061.9" y="733" width="326.2" height="15" fill="#FFFFFF"/>
+<text x="1225.0" y="745" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">card updated: RCA, verdict, fix, Approve  (T+4 min)</text>
+<path d="M1300.0 790 H700.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" stroke-dasharray="6 4" marker-end="url(#open)"/>
+<rect x="861.7" y="773" width="276.6" height="15" fill="#FFFFFF"/>
+<text x="1000.0" y="785" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">Approve  (signed link or xMatters response)</text>
+<path d="M700.0 830 H1450.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<rect x="1011.1" y="813" width="127.8" height="15" fill="#FFFFFF"/>
+<text x="1075.0" y="825" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">execute_remediation</text>
+<path d="M1450.0 870 H700.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" stroke-dasharray="6 4" marker-end="url(#open)"/>
+<rect x="949.1" y="853" width="251.8" height="15" fill="#FFFFFF"/>
+<text x="1075.0" y="865" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">remediation-result-1.0, service healthy</text>
+<path d="M700.0 910 H1150.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<rect x="876.6" y="893" width="96.8" height="15" fill="#FFFFFF"/>
+<text x="925.0" y="905" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">closure update</text>
+<path d="M700.0 950 H1600.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<rect x="1129.5" y="933" width="41.0" height="15" fill="#FFFFFF"/>
+<text x="1150.0" y="945" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">close</text>
+<path d="M1600.0 990 H700.0" stroke="#5F6B7A" stroke-width="1.5" fill="none" stroke-dasharray="6 4" marker-end="url(#open)"/>
+<rect x="1030.3" y="973" width="239.4" height="15" fill="#FFFFFF"/>
+<text x="1150.0" y="985" font-size="11" font-weight="400" fill="#1F2933" text-anchor="middle">kb-record-1.0 stored with human label</text>
+</svg>

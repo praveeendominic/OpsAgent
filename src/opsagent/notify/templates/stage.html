@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ subject }}</title>
+</head>
+<body style="margin:0;padding:16px;background:#f3f4f6;font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#1f1f1f">
+<div style="max-width:720px;margin:0 auto;background:#fff;border:1px solid #ddd;border-radius:8px;padding:20px">
+  <p style="margin:0 0 8px;color:#666;font-size:12px">{{ brand }} | OpsAgent Incident Bridge | {{ stage_label }}</p>
+  <h1 style="font-size:20px;margin:0 0 6px;color:{{ severity_colour }}">{{ severity }}: {{ service }} on {{ instance_id }}</h1>
+  <p style="margin:0 0 14px;font-weight:bold">{{ headline }}</p>
+
+  <table style="border-collapse:collapse;margin:0 0 14px">
+  {% for fact in facts %}
+    <tr>
+      <td style="padding:3px 12px 3px 0;font-weight:bold;vertical-align:top;white-space:nowrap">{{ fact.title }}</td>
+      <td style="padding:3px 0;vertical-align:top">{{ fact.value }}</td>
+    </tr>
+  {% endfor %}
+  </table>
+
+  <p style="margin:0 0 14px">{{ summary }}</p>
+
+  {% if diagnosis %}
+  <h2 style="font-size:16px;margin:18px 0 6px;padding-top:10px;border-top:1px solid #ddd">Root cause</h2>
+  <p style="margin:0 0 6px">{{ diagnosis.root_cause.summary }}</p>
+  <p style="margin:0 0 6px;color:#666;font-size:12px">Category: {{ diagnosis.root_cause.category }} &middot; Confidence: {{ diagnosis.root_cause.confidence }}</p>
+  {% if diagnosis.citations %}
+  <h2 style="font-size:16px;margin:18px 0 6px;padding-top:10px;border-top:1px solid #ddd">Citations</h2>
+  <ul style="margin:0 0 6px;padding-left:20px">
+  {% for c in diagnosis.citations[:5] %}
+    <li><strong>{{ c.title }}</strong> &mdash; <span style="color:#666">{{ c.source }}</span></li>
+  {% endfor %}
+  </ul>
+  {% endif %}
+  {% endif %}
+
+  {% if code_correlation %}
+  <h2 style="font-size:16px;margin:18px 0 6px;padding-top:10px;border-top:1px solid #ddd">Code verdict</h2>
+  <table style="border-collapse:collapse;margin:0 0 8px">
+    <tr><td style="padding:3px 12px 3px 0;font-weight:bold">Verdict</td><td>{{ code_correlation.verdict }}</td></tr>
+    <tr><td style="padding:3px 12px 3px 0;font-weight:bold">Confidence</td><td>{{ "%.0f%%"|format(code_correlation.confidence * 100) }}</td></tr>
+    {% for loc in code_correlation.locations[:3] %}
+    <tr><td style="padding:3px 12px 3px 0;font-weight:bold">Location</td>
+        <td><code>{{ loc.file }}{% if loc.line %}:{{ loc.line }}{% endif %}</code>{% if loc.symbol %} ({{ loc.symbol }}){% endif %}</td></tr>
+    {% endfor %}
+    <tr><td style="padding:3px 12px 3px 0;font-weight:bold;vertical-align:top">Developer action</td><td>{{ code_correlation.developer_action }}</td></tr>
+  </table>
+  <p style="margin:0 0 6px">{{ code_correlation.explanation }}</p>
+  {% endif %}
+
+  {% if recommended_fix %}
+  <h2 style="font-size:16px;margin:18px 0 6px;padding-top:10px;border-top:1px solid #ddd">Recommended immediate fix</h2>
+  <p style="margin:0 0 6px"><strong>{{ recommended_fix.action }}</strong> (owner: {{ recommended_fix.owner }})</p>
+  <p style="margin:0 0 6px">{{ recommended_fix.detail }}</p>
+  {% if recommended_fix.command %}
+  <pre style="background:#f4f4f4;border:1px solid #e1e1e1;border-radius:4px;padding:10px;font-family:Consolas,monospace;font-size:13px;white-space:pre-wrap">{{ recommended_fix.command }}</pre>
+  {% endif %}
+  {% if recommended_fix.reversal %}
+  <p style="margin:0 0 6px;color:#666;font-size:12px">Reversal: {{ recommended_fix.reversal }}</p>
+  {% endif %}
+  {% endif %}
+
+  {% if durable_fix %}
+  <h2 style="font-size:16px;margin:18px 0 6px;padding-top:10px;border-top:1px solid #ddd">Durable fix</h2>
+  <p style="margin:0 0 6px"><strong>{{ durable_fix.action }}</strong> (owner: {{ durable_fix.owner }})</p>
+  <p style="margin:0 0 6px">{{ durable_fix.detail }}</p>
+  {% if durable_fix.command %}
+  <pre style="background:#f4f4f4;border:1px solid #e1e1e1;border-radius:4px;padding:10px;font-family:Consolas,monospace;font-size:13px;white-space:pre-wrap">{{ durable_fix.command }}</pre>
+  {% endif %}
+  {% endif %}
+
+  {% if trace_url %}
+  <p style="margin:14px 0 0"><a href="{{ trace_url }}" style="display:inline-block;padding:6px 12px;background:#0b5cad;color:#fff;text-decoration:none;border-radius:4px">Open trace</a></p>
+  {% endif %}
+
+  {% if stage == "stage1" %}
+  <p style="margin:14px 0 0;color:#666;font-size:12px">Root cause, code verdict and the recommended fix follow in stage 2.</p>
+  {% endif %}
+
+  <p style="margin:18px 0 0;padding-top:10px;border-top:1px solid #ddd;color:#888;font-size:11px">
+    Sent by OpsAgent for {{ brand }}. Incident {{ incident_id }}, event {{ event_id }}.
+  </p>
+</div>
+</body>
+</html>

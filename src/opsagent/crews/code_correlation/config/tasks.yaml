@@ -1,0 +1,45 @@
+locate_code:
+  description: >
+    Incident {incident_id}: service {service} (repository {repository}) on instance {instance_id} was killed by
+    the kernel OOM killer after its resident memory grew about {slope_mb_per_min} MB per minute to {peak_rss_mb} MB.
+    The application log repeated this message while memory grew: "{top_error}".
+
+    Using the repository tools bound to {repository}: list the files once, grep for the exact log message and for
+    the words cache, remember, store and global dictionaries, then open the files that emit the message and the
+    module that holds the data structure. Also open the service's entry point and the systemd unit under deploy
+    if present. Report the candidate locations with file path, symbol and the lines you read.
+  expected_output: >
+    A LocatedCode object: locations (file, symbol, line, excerpt of at most 6 lines, why), entry_point (file),
+    unit_file_notes (what the systemd unit sets or does not set for memory), tool_calls_used (integer).
+  agent: repo_navigator
+
+analyse_code:
+  description: >
+    Read the located code for incident {incident_id} and judge whether it explains the observed growth of about
+    {slope_mb_per_min} MB per minute. Look for: a module-level or long-lived dictionary or list that only grows,
+    missing eviction or TTL, payloads held per request, loops that never release, N+1 access patterns. Call
+    repo_recent_commits once (last 14 days) and note whether the relevant file changed. Quote at most 6 lines per
+    excerpt. If the growth comes from a deliberate demo or test routine, say so explicitly but still name the real
+    data structure that makes the growth possible.
+  expected_output: >
+    A CodeAnalysis object: pattern (unbounded_growth, missing_eviction, n_plus_one, busy_loop, resource_leak or
+    none), findings (list of CodeLocation with excerpt and why), explanation (three sentences), recent_commits
+    (list of RecentCommit from the tool, may be empty), is_demo_fixture (true or false).
+  agent: code_analyst
+  context: [locate_code]
+
+adjudicate:
+  description: >
+    Decide ownership for incident {incident_id}. Evidence: the host is a {instance_type} with {total_memory_mb} MB
+    RAM and no memory limits on the unit; the application's memory grew about {slope_mb_per_min} MB per minute
+    until the kernel killed it; the code analysis is in the previous task. Verdict rules: code when the growth is
+    produced by application logic that would exhaust any reasonable host; infra when the application is bounded
+    and the host or its limits are simply too small; shared when an application defect exists and the host also
+    lacks limits that would have contained it. Give a confidence between 0 and 1, name the primary file and
+    symbol, and write one developer action sentence (for example bound the order cache with an LRU limit or TTL
+    and stop holding full payloads).
+  expected_output: >
+    A CodeCorrelation object with repository set to {repository}, verdict, confidence, pattern, locations (copied
+    from the analysis, primary first), explanation, developer_action and recent_commits.
+  agent: ownership_adjudicator
+  context: [locate_code, analyse_code]
