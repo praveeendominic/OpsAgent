@@ -105,6 +105,10 @@ def test_flow_runs_end_to_end_offline(isolated_settings, monkeypatch):
     stages = [r["stage"] for r in run["receipts"]]
     assert stages == ["stage1", "stage2", "closure"]  # fake deliver per stage, then the ticket closure note
     assert run["receipts"][2]["channel"] == "servicenow" and run["receipts"][2]["ok"] is False  # not configured here
+    # the severity policy in force is recorded with the run, and the parse step names the rule that fired
+    assert run["severity_policy"]["source"].endswith("severity.yaml") and run["severity_policy"]["rules"][0] == "oom_event -> critical"
+    parse = next(st for st in run["steps"] if st["name"] == "triage.parse")
+    assert parse["output"]["severity_rule"] == "oom_event -> critical"
 
 
 def test_second_run_is_deduplicated(isolated_settings, monkeypatch):
@@ -131,3 +135,54 @@ def test_flow_degrades_when_a_crew_fails(isolated_settings, monkeypatch):
     run = json.loads(Path(result["run_json"]).read_text(encoding="utf-8"))
     assert run["status"] == "done_with_errors"
     assert "Diagnosis unavailable" in run["artifacts"]["diagnosis"]["root_cause"]["summary"]
+
+
+def _use_policy(tmp_path, monkeypatch, text: str):
+    from opsagent import config
+    from opsagent.parsing import severity_policy
+
+    path = tmp_path / "severity.yaml"
+    path.write_text(text, encoding="utf-8")
+    monkeypatch.setenv("OPSAGENT_SEVERITY_POLICY", str(path))
+    config.get_settings.cache_clear()
+    severity_policy.clear_policy_cache()
+
+
+def test_policy_decides_who_gets_paged(isolated_settings, monkeypatch, tmp_path):
+    """Same OOM event: a policy that calls it a warning but pages warnings still takes the stage 1 / stage 2 path;
+    a policy that calls it a warning and pages only critical logs it and closes without any page."""
+    _canned(monkeypatch)
+    from opsagent.flow.incident_flow import run_event
+    from opsagent.parsing import severity_policy
+
+    try:
+        _use_policy(tmp_path, monkeypatch, "rules:\n  - severity: warning\n    when: oom_event\npaging:\n  immediate: [critical, warning]\n")
+        paged = run_event(EVENT, force=True)
+        assert paged["severity"] == "warning"
+        assert {"stage1", "stage2", "close"} <= set(paged["timings"])
+        assert [r["stage"] for r in paged["receipts"]] == ["stage1", "stage2", "closure"]
+
+        _use_policy(tmp_path, monkeypatch, "rules:\n  - severity: warning\n    when: oom_event\n")
+        quiet = run_event(EVENT, force=True)
+        assert quiet["severity"] == "warning"
+        assert "stage1" not in quiet["timings"] and "close" in quiet["timings"]
+        assert quiet["receipts"] == []
+        run = json.loads(Path(quiet["run_json"]).read_text(encoding="utf-8"))
+        names = [st["name"] for st in run["steps"]]
+        assert "log_or_warn" in names and "page_stage1" not in names and "close.librarian" not in names
+        assert run["severity_policy"]["paging_immediate"] == ["critical"]
+    finally:
+        severity_policy.clear_policy_cache()
+
+
+def test_flow_refuses_a_broken_policy(isolated_settings, monkeypatch, tmp_path):
+    _canned(monkeypatch)
+    from opsagent.flow.incident_flow import run_event
+    from opsagent.parsing import severity_policy
+
+    try:
+        _use_policy(tmp_path, monkeypatch, "rules:\n  - severity: critical\n    when: memory_is_low\n")
+        with pytest.raises(severity_policy.SeverityPolicyError):
+            run_event(EVENT, force=True)
+    finally:
+        severity_policy.clear_policy_cache()

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from opsagent.parsing.applog import AppLogSummary, parse_app_log
 from opsagent.parsing.classify import classify, severity
+from opsagent.parsing.severity_policy import SeverityPolicy, SeverityPolicyError, get_policy, load_policy
 from opsagent.parsing.inventory import load_inventory, lookup_instance, repository_for
 from opsagent.parsing.oom import parse_oom_events
 from opsagent.parsing.systemd import parse_service_events, restart_count
@@ -29,4 +30,8 @@ __all__ = [
     "repository_for",
     "restart_count",
     "severity",
+    "SeverityPolicy",
+    "SeverityPolicyError",
+    "get_policy",
+    "load_policy",
 ]

@@ -1,25 +1,26 @@
-"""Rule-based classification and severity. Deterministic; the LLM only comments on the result."""
+"""Rule-based classification and severity. Deterministic; the LLM only comments on the result.
+
+Thresholds and the severity rules come from the severity policy (config/severity.yaml, see
+opsagent.parsing.severity_policy); the rule logic itself stays here, in code, with tests.
+"""
 from __future__ import annotations
 
+from opsagent.parsing.severity_policy import SeverityPolicy, get_policy
 from opsagent.schemas.raw import RawEvent
 from opsagent.schemas.triage import Classification, Evidence, Severity
 
 _KNOWN_REASONS = {"memory", "cpu", "disk", "network"}
 
-RAPID_GROWTH_MIN_SLOPE_MB_PER_MIN = 50.0
-RAPID_GROWTH_MAX_MEM_AVAILABLE_PCT = 10.0
-CRITICAL_RESTART_COUNT = 2
-CRITICAL_MEM_AVAILABLE_PCT = 5.0
 
-
-def classify(event: RawEvent, evidence: Evidence) -> Classification:
+def classify(event: RawEvent, evidence: Evidence, policy: SeverityPolicy | None = None) -> Classification:
     """Apply the triage rules in order and return the first match.
 
-    1. A kernel OOM kill in the system log            -> memory / process_oom_kill / high
-    2. Leak slope >= 50 MB/min and < 10 % mem avail    -> memory / rapid_growth / medium
-    3. Alarm event_type is cpu                         -> cpu / sustained_high_cpu / medium
-    4. Otherwise the alarm's event_type                -> <event_type> / threshold_breach / low
+    1. A kernel OOM kill in the system log                         -> memory / process_oom_kill / high
+    2. Leak slope >= policy slope and < policy mem avail (50 / 10)  -> memory / rapid_growth / medium
+    3. Alarm event_type is cpu                                      -> cpu / sustained_high_cpu / medium
+    4. Otherwise the alarm's event_type                             -> <event_type> / threshold_breach / low
     """
+    thresholds = (policy or get_policy()).classification
     if evidence.oom_events:
         o = evidence.oom_events[-1]
         rss = f"{o.anon_rss_kb // 1024} MB anon RSS" if o.anon_rss_kb else "unknown RSS"
@@ -35,9 +36,9 @@ def classify(event: RawEvent, evidence: Evidence) -> Classification:
     lp = evidence.leak_profile
     if (
         lp is not None
-        and lp.slope_mb_per_min >= RAPID_GROWTH_MIN_SLOPE_MB_PER_MIN
+        and lp.slope_mb_per_min >= thresholds.rapid_growth_min_slope_mb_per_min
         and lp.mem_available_pct_at_kill is not None
-        and lp.mem_available_pct_at_kill < RAPID_GROWTH_MAX_MEM_AVAILABLE_PCT
+        and lp.mem_available_pct_at_kill < thresholds.rapid_growth_max_mem_available_pct
     ):
         return Classification(
             reason="memory",
@@ -70,20 +71,10 @@ def classify(event: RawEvent, evidence: Evidence) -> Classification:
     )
 
 
-def severity(event: RawEvent, evidence: Evidence, classification: Classification) -> Severity:
-    """Severity from the evidence.
+def severity(event: RawEvent, evidence: Evidence, classification: Classification, policy: SeverityPolicy | None = None) -> Severity:
+    """Severity from the evidence, by the policy's ordered rules (first match wins, else the policy default).
 
-    critical: an OOM kill happened, the restart counter reached 2, or memory available fell under 5 %.
-    warning:  classification confidence is high or medium without any of the above.
-    info:     everything else.
+    The shipped policy: critical when an OOM kill happened, the restart counter reached 2, or memory available
+    fell under 5 %; warning when the classification confidence is high or medium; info otherwise.
     """
-    lp = evidence.leak_profile
-    if evidence.oom_events:
-        return "critical"
-    if evidence.restart_count is not None and evidence.restart_count >= CRITICAL_RESTART_COUNT:
-        return "critical"
-    if lp is not None and lp.mem_available_pct_at_kill is not None and lp.mem_available_pct_at_kill < CRITICAL_MEM_AVAILABLE_PCT:
-        return "critical"
-    if classification.confidence in ("high", "medium"):
-        return "warning"
-    return "info"
+    return (policy or get_policy()).severity_for(event, evidence, classification)

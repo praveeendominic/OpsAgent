@@ -84,10 +84,15 @@ class IncidentFlow(Flow[IncidentState]):
         from opsagent.crews.triage.crew import run_triage_crew
         from opsagent.parsing.triage_builder import build_triage
 
+        from opsagent.parsing.severity_policy import get_policy
+
         rec = self._rec()
         rec.start_step("triage.parse")
+        policy = get_policy()
+        rec.note("severity_policy", policy.describe())
         record = build_triage(self.state.event, self.state.incident_id)
         rec.end_step("triage.parse", output={"severity": record.severity, "classification": record.classification.model_dump(),
+                                             "severity_rule": policy.matched_rule(self.state.event, record.evidence, record.classification),
                                              "digest": record.digest()})
         rec.start_step("triage.analyst", kind="crew", crew="Triage")
         run = run_triage_crew(record)
@@ -107,7 +112,16 @@ class IncidentFlow(Flow[IncidentState]):
 
     @router(triage)
     def route_by_severity(self) -> str:
-        return self.state.severity or "info"
+        """Route "critical" is the paging path (stage 1 page plus the diagnosis crews); "warning" and "info" log and close.
+
+        Which severities take the paging path is policy (paging.immediate in config/severity.yaml), so a client can
+        page on warning without touching the flow.
+        """
+        from opsagent.parsing.severity_policy import get_policy
+
+        sev = self.state.severity or "info"
+        self.state.paged = get_policy().pages(sev)
+        return "critical" if self.state.paged else sev
 
     # ---- warning / info ------------------------------------------------------
     @listen(or_("warning", "info"))
@@ -241,7 +255,7 @@ class IncidentFlow(Flow[IncidentState]):
         rec = self._rec()
         t, d, c = self.state.triage, self.state.diagnosis, self.state.code_correlation
         draft, usage, err = None, {}, None
-        if self.state.severity == "critical":
+        if self.state.paged:
             rec.start_step("close.librarian", kind="crew", crew="Knowledge")
             run = run_librarian(t, d, c)
             draft, usage, err = run.output, run.usage, run.error
@@ -257,7 +271,7 @@ class IncidentFlow(Flow[IncidentState]):
             stored = f"not stored: {exc}"
             self._fail("close.store", str(exc))
         self.state.kb_record = record
-        if self.state.severity == "critical":
+        if self.state.paged:
             try:
                 from opsagent.notify.deliver import deliver_closure
 
@@ -279,7 +293,7 @@ class IncidentFlow(Flow[IncidentState]):
 
     # ------------------------------------------------------------------ watchdog
     def _watchdog_fire(self) -> None:
-        if self._stage2_done.is_set() or self.state.severity != "critical":
+        if self._stage2_done.is_set() or not self.state.paged:
             return
         try:
             from opsagent.notify.deliver import deliver_delay_notice

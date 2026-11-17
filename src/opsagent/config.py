@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     outbox_dir: Path = Field(default=Path("outbox"), alias="OPSAGENT_OUTBOX_DIR")
     runs_dir: Path = Field(default=Path("runs"), alias="OPSAGENT_RUNS_DIR")
     inventory_file: Path = Field(default=Path("config/instances.yaml"), alias="OPSAGENT_INVENTORY")
+    severity_policy_file: Path = Field(default=Path("config/severity.yaml"), alias="OPSAGENT_SEVERITY_POLICY")
     embedding_model: str = Field(default="BAAI/bge-small-en-v1.5", alias="OPSAGENT_EMBEDDING_MODEL")
 
     # Behaviour
@@ -96,6 +97,10 @@ class Settings(BaseSettings):
     @property
     def inventory_path(self) -> Path:
         return self.resolve(self.inventory_file)
+
+    @property
+    def severity_policy_path(self) -> Path:
+        return self.resolve(self.severity_policy_file)
 
     @property
     def azure_resource_base(self) -> str:

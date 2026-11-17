@@ -150,6 +150,12 @@ class RunRecorder:
             self.data["receipts"].append(_jsonable(receipt))
             self.flush()
 
+    def note(self, key: str, value: Any) -> None:
+        """Record a top-level fact about the run (for example the severity policy in force)."""
+        with self._lock:
+            self.data[key] = _jsonable(value)
+            self.flush()
+
     def finish(self, status: str = "done") -> None:
         with self._lock:
             self.data["status"] = status

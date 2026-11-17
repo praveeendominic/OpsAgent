@@ -1,0 +1,39 @@
+# Severity policy for the Triage step. Deterministic: the LLM never reads or changes this.
+#
+# Edit, review in a pull request, done; the running flow re-reads the file when it changes. The path can be
+# overridden with OPSAGENT_SEVERITY_POLICY. A missing file means the built-in defaults, which equal this file.
+# A malformed file (unknown rule kind, missing threshold, misspelt severity) stops the run at load time.
+#
+# Rule kinds (the conditions are code, with tests; only order, thresholds and the outcome live here):
+#   oom_event                      a kernel OOM kill was parsed from the system log            (no value)
+#   restart_count_at_least         systemd restart counter >= value
+#   mem_available_pct_below        memory available at the kill < value (percent)
+#   leak_slope_at_least            RSS growth >= value (MB per minute)
+#   classification_confidence_in   rule-based classification confidence in value   [high, medium, low]
+#   alarm_event_type_in            the alarm's event_type in value                  [memory, cpu, disk, network]
+
+rules:                            # evaluated in order, first match wins
+  - severity: critical
+    when: oom_event
+  - severity: critical
+    when: restart_count_at_least
+    value: 2
+  - severity: critical
+    when: mem_available_pct_below
+    value: 5
+  - severity: warning
+    when: classification_confidence_in
+    value: [high, medium]
+default: info
+
+classification:                   # thresholds behind the memory / rapid_growth classification rule
+  rapid_growth_min_slope_mb_per_min: 50
+  rapid_growth_max_mem_available_pct: 10
+
+servicenow:                       # severity -> impact, urgency (1 high .. 3 low); the instance derives priority
+  critical: {impact: 1, urgency: 1}
+  warning:  {impact: 2, urgency: 2}
+  info:     {impact: 3, urgency: 3}
+
+paging:                           # severities that page stage 1 immediately and run the diagnosis crews
+  immediate: [critical]

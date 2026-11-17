@@ -38,6 +38,7 @@ The four measures printed at the end of a run: time to stage 1, time to stage 2,
 ```
 events/                 sample raw-1.0 event (the message the enricher puts on the queue)
 config/instances.yaml   demo inventory (instance type, memory, tags) and app -> repository map
+config/severity.yaml    severity policy: triage thresholds, ordered severity rules, ServiceNow impact/urgency, paging
 examples/orders-api/    sample FastAPI service with the unbounded order cache the agents find
 src/opsagent/
   schemas/              versioned contracts: raw-1.0, triage-1.0, diagnosis-1.0, code-correlation-1.0,
@@ -83,3 +84,42 @@ python -m opsagent run --event events/log_event.json   # live functional run aga
 
 All settings come from `.env` (see `.env.example`). Nothing in the repository contains credentials; `.env`,
 `outbox/`, `runs/` and `.opsagent/` are ignored by git.
+
+### Severity policy (`config/severity.yaml`)
+
+Severity is decided deterministically in the Triage step; the LLM only comments on it. The thresholds and the
+mappings are policy, so they live in a versioned YAML file an operator can change in a pull request, not in code
+and not in `.env` (only the path is a setting: `OPSAGENT_SEVERITY_POLICY`, default `config/severity.yaml`).
+
+```yaml
+rules:                      # evaluated in order, first match wins
+  - severity: critical
+    when: oom_event
+  - severity: critical
+    when: restart_count_at_least
+    value: 2
+  - severity: critical
+    when: mem_available_pct_below
+    value: 5
+  - severity: warning
+    when: classification_confidence_in
+    value: [high, medium]
+default: info
+classification:             # thresholds behind the memory / rapid_growth classification rule
+  rapid_growth_min_slope_mb_per_min: 50
+  rapid_growth_max_mem_available_pct: 10
+servicenow:                 # severity -> impact, urgency; the instance derives priority from the pair
+  critical: {impact: 1, urgency: 1}
+  warning:  {impact: 2, urgency: 2}
+  info:     {impact: 3, urgency: 3}
+paging:                     # severities that page stage 1 immediately and run the diagnosis crews
+  immediate: [critical]
+```
+
+Rule kinds are a closed set in code (`oom_event`, `restart_count_at_least`, `mem_available_pct_below`,
+`leak_slope_at_least`, `classification_confidence_in`, `alarm_event_type_in`); new conditions are added as code
+with tests, the file only chooses order, thresholds and outcome. The file is validated strictly: an unknown rule
+kind, a missing threshold or a misspelt severity stops the run at load time instead of silently downgrading an
+OOM kill. A missing file means the built-in defaults, which equal the shipped file. Edits are picked up on the
+next run without a restart, and every `run.json` records the policy path, its digest, the rule order in force and
+the rule that produced the severity (`severity_policy` and the `triage.parse` step).

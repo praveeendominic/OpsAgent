@@ -18,8 +18,8 @@ NOT_CONFIGURED = "not configured: set SERVICENOW_INSTANCE and SERVICENOW_USER/SE
 CORRELATION_DISPLAY = "OpsAgent"
 _TABLE = "/api/now/table/incident"
 
-# ServiceNow priority is derived from impact x urgency (1 = high, 3 = low)
-_PRIORITY: dict[str, tuple[str, str]] = {"critical": ("1", "1"), "warning": ("2", "2"), "info": ("3", "3")}
+# ServiceNow derives priority from impact x urgency (1 = high, 3 = low). The severity -> (impact, urgency) map is
+# policy (the servicenow block of config/severity.yaml), not code.
 
 
 def _now() -> datetime:
@@ -85,7 +85,9 @@ class ServiceNowClient:
 # ------------------------------------------------------------------------------------------------ field mapping
 def incident_fields(pkg: IncidentPackage, body: str, settings: Settings) -> dict:
     """Fields for a new incident record built from the package (stage 1 normally; stage 2 when stage 1 never landed)."""
-    impact, urgency = _PRIORITY.get((pkg.severity or "info").lower(), ("3", "3"))
+    from opsagent.parsing.severity_policy import get_policy
+
+    impact, urgency = get_policy().ticket_priority((pkg.severity or "info").lower())
     fields: dict[str, Any] = {
         "short_description": f"[{(pkg.severity or 'info').upper()}] {pkg.title}"[:160],
         "description": body,

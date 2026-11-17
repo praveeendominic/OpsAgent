@@ -17,6 +17,7 @@ class IncidentState(BaseModel):
     event: RawEvent | None = None
     incident_id: str = ""
     severity: str = ""
+    paged: bool = False  # the severity policy routed this incident to stage 1 paging and the diagnosis crews
     started_at: datetime | None = None
     alarm_at: datetime | None = None
     duplicate_of: str | None = None
