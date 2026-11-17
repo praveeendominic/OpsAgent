@@ -35,5 +35,10 @@ servicenow:                       # severity -> impact, urgency (1 high .. 3 low
   warning:  {impact: 2, urgency: 2}
   info:     {impact: 3, urgency: 3}
 
+xmatters:                         # severity -> priority of the xMatters event the trigger raises
+  critical: HIGH
+  warning: MEDIUM
+  info: LOW
+
 paging:                           # severities that page stage 1 immediately and run the diagnosis crews
   immediate: [critical]

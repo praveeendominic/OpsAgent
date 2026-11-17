@@ -14,7 +14,7 @@ import hashlib
 import threading
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -102,6 +102,9 @@ class TicketPriority(BaseModel):
     urgency: int = Field(ge=1, le=3)
 
 
+XmPriority = Literal["HIGH", "MEDIUM", "LOW"]
+
+
 class PagingPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -113,6 +116,7 @@ _DEFAULT_TICKET: dict[str, TicketPriority] = {
     "warning": TicketPriority(impact=2, urgency=2),
     "info": TicketPriority(impact=3, urgency=3),
 }
+_DEFAULT_XMATTERS: dict[str, str] = {"critical": "HIGH", "warning": "MEDIUM", "info": "LOW"}
 
 
 class SeverityPolicy(BaseModel):
@@ -122,6 +126,7 @@ class SeverityPolicy(BaseModel):
     default: Severity = "info"
     classification: ClassificationThresholds = Field(default_factory=ClassificationThresholds)
     servicenow: dict[Severity, TicketPriority] = Field(default_factory=lambda: dict(_DEFAULT_TICKET))
+    xmatters: dict[Severity, XmPriority] = Field(default_factory=lambda: dict(_DEFAULT_XMATTERS))  # type: ignore[arg-type]
     paging: PagingPolicy = Field(default_factory=PagingPolicy)
 
     # provenance, filled by the loader; excluded from dumps so a dumped policy re-validates
@@ -132,6 +137,7 @@ class SeverityPolicy(BaseModel):
     def _complete_ticket_map(self) -> "SeverityPolicy":
         for sev in SEVERITIES:
             self.servicenow.setdefault(sev, _DEFAULT_TICKET[sev])
+            self.xmatters.setdefault(sev, _DEFAULT_XMATTERS[sev])  # type: ignore[arg-type]
         return self
 
     # ------------------------------------------------------------------ decisions
@@ -156,6 +162,10 @@ class SeverityPolicy(BaseModel):
         tp = self.servicenow.get(severity) or self.servicenow["info"]  # type: ignore[call-overload]
         return str(tp.impact), str(tp.urgency)
 
+    def event_priority(self, severity: str) -> str:
+        """xMatters event priority (HIGH / MEDIUM / LOW) for a severity; unknown severities get the info mapping."""
+        return str(self.xmatters.get(severity) or self.xmatters["info"])  # type: ignore[call-overload]
+
     def describe(self) -> dict[str, Any]:
         """Compact provenance for run.json: which file, which digest, and the rule order that was in force."""
         return {
@@ -165,6 +175,7 @@ class SeverityPolicy(BaseModel):
             "default": self.default,
             "classification": self.classification.model_dump(),
             "servicenow": {k: f"impact {v.impact} / urgency {v.urgency}" for k, v in self.servicenow.items()},
+            "xmatters": dict(self.xmatters),
             "paging_immediate": list(self.paging.immediate),
         }
 

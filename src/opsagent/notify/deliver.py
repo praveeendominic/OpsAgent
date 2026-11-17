@@ -1,4 +1,4 @@
-"""Deliver an IncidentPackage: outbox always, then Teams and email when configured."""
+"""Deliver an IncidentPackage: outbox always, then Teams, email, ServiceNow and xMatters when configured."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -17,6 +17,9 @@ from opsagent.notify.servicenow import NOT_CONFIGURED as SERVICENOW_NOT_CONFIGUR
 from opsagent.notify.servicenow import send_stage as servicenow_send_stage
 from opsagent.notify.servicenow import send_work_note as servicenow_work_note
 from opsagent.notify.teams import send_card
+from opsagent.notify.xmatters import NOT_CONFIGURED as XMATTERS_NOT_CONFIGURED
+from opsagent.notify.xmatters import send_note as xmatters_send_note
+from opsagent.notify.xmatters import send_stage as xmatters_send_stage
 from opsagent.schemas.incident import DeliveryReceipt, IncidentPackage
 
 TEAMS_NOT_CONFIGURED = "not configured: set TEAMS_WEBHOOK_URL"
@@ -59,9 +62,10 @@ def _fan_out(
     email_parts: tuple[str, str, str] | None,
     pkg: IncidentPackage | None = None,
     note: tuple[str, str] | None = None,
+    severity: str = "critical",
 ) -> list[DeliveryReceipt]:
-    """Teams, email and ServiceNow. A package creates/updates the ServiceNow record; a (incident_id, text) note is
-    appended to it as a work note."""
+    """Teams, email, ServiceNow and xMatters. A package creates/updates the ServiceNow record and raises/annotates
+    the xMatters event; a (incident_id, text) note is appended to both as a work note / annotation."""
     receipts: list[DeliveryReceipt] = []
     if s.teams_enabled:
         receipts.append(send_card(card, settings=s, stage=stage))
@@ -80,6 +84,13 @@ def _fan_out(
             receipts.append(servicenow_work_note(note[0], note[1], stage, settings=s))
     else:
         receipts.append(_not_configured("servicenow", stage, SERVICENOW_NOT_CONFIGURED))
+    if s.xmatters_enabled:
+        if pkg is not None:
+            receipts.append(xmatters_send_stage(pkg, card_to_markdown(card), settings=s))
+        elif note is not None:
+            receipts.append(xmatters_send_note(note[0], note[1], stage, severity=severity, settings=s))
+    else:
+        receipts.append(_not_configured("xmatters", stage, XMATTERS_NOT_CONFIGURED))
     return receipts
 
 
@@ -121,13 +132,14 @@ def deliver_delay_notice(
         receipts.append(_outbox_receipt("delay", paths))
     except Exception as exc:  # noqa: BLE001
         receipts.append(_outbox_receipt("delay", [], error=exc))
-    receipts.extend(_fan_out(card, "delay", s, (subject, text, html), note=(incident_id, text)))
+    receipts.extend(_fan_out(card, "delay", s, (subject, text, html), note=(incident_id, text), severity=severity))
     return receipts
 
 
 def deliver_closure(incident_id: str, kb_record, settings: Settings | None = None) -> list[DeliveryReceipt]:
-    """Closure note for the ticketing system only: the knowledge record digest and the label workflow to follow.
-    Teams and email already carried the diagnosis; the ITSM record is the one that must show the closure."""
+    """Closure note for the ticketing and paging systems only: the knowledge record digest and the label workflow.
+    Teams and email already carried the diagnosis; the ITSM record must show the closure and the xMatters event
+    gets the same note and, by default, is terminated so the page stops."""
     s = settings or get_settings()
     lines = [
         f"{s.brand} OpsAgent closed its automated handling of {incident_id}.",
@@ -145,6 +157,14 @@ def deliver_closure(incident_id: str, kb_record, settings: Settings | None = Non
     lines += ["", f"Knowledge record stored with label '{kb_record.label}'. "
               "Label the RCA (accepted / partially_correct / wrong) in the OpsAgent recorder so future incidents can reuse it."]
     text = "\n".join(lines)
-    if not s.servicenow_enabled:
-        return [_not_configured("servicenow", "closure", SERVICENOW_NOT_CONFIGURED)]
-    return [servicenow_work_note(incident_id, text, "closure", settings=s, resolve=s.servicenow_resolve_on_close)]
+    receipts: list[DeliveryReceipt] = []
+    if s.servicenow_enabled:
+        receipts.append(servicenow_work_note(incident_id, text, "closure", settings=s, resolve=s.servicenow_resolve_on_close))
+    else:
+        receipts.append(_not_configured("servicenow", "closure", SERVICENOW_NOT_CONFIGURED))
+    if s.xmatters_enabled:
+        receipts.append(xmatters_send_note(incident_id, text, "closure", severity=str(getattr(kb_record, "severity", "critical") or "critical"),
+                                           settings=s, terminate=s.xmatters_terminate_on_close))
+    else:
+        receipts.append(_not_configured("xmatters", "closure", XMATTERS_NOT_CONFIGURED))
+    return receipts

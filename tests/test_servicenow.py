@@ -181,7 +181,7 @@ def test_deliver_fan_out_includes_servicenow(monkeypatch, stage1_pkg, stage2_pkg
     fake = FakeServiceNow()
     _install(monkeypatch, fake)
     r1 = {r.channel: r for r in deliver(stage1_pkg, settings=sn_settings)}
-    assert set(r1) == {"outbox", "teams", "email", "servicenow"}
+    assert set(r1) == {"outbox", "teams", "email", "servicenow", "xmatters"}
     assert r1["servicenow"].ok and r1["servicenow"].detail.startswith("created")
     # the description is the stage 1 card rendered as text, so the ticket reads like the Teams card
     assert "orders-api" in fake.records["sys10001"]["description"]
@@ -200,7 +200,8 @@ def test_deliver_fan_out_includes_servicenow(monkeypatch, stage1_pkg, stage2_pkg
         durable_fix="bound the cache", citations=["kb://systemd/resource-control#memorymax"], created_at=datetime.now(timezone.utc),
     )
     closure = deliver_closure(stage1_pkg.incident_id, kb, settings=sn_settings)
-    assert len(closure) == 1 and closure[0].ok and closure[0].stage == "closure"
+    assert [c.channel for c in closure] == ["servicenow", "xmatters"]
+    assert closure[0].ok and closure[0].stage == "closure" and closure[1].ok is False  # xMatters not configured here
     last_note = fake.records["sys10001"]["work_notes_log"][-1]
     assert "unbounded in-process order cache" in last_note and "label" in last_note
     assert fake.records["sys10001"].get("state") != "6"  # resolve only when SERVICENOW_RESOLVE_ON_CLOSE=1
@@ -210,7 +211,8 @@ def test_closure_not_configured(tmp_path: Path) -> None:
     kb = KBRecord(incident_id="inc-x", event_id="e", event_type="t", severity="critical", digest="d",
                   root_cause_summary="r", created_at=datetime.now(timezone.utc))
     out = deliver_closure("inc-x", kb, settings=Settings(_env_file=None, OPSAGENT_OUTBOX_DIR=str(tmp_path)))
-    assert len(out) == 1 and out[0].ok is False and out[0].channel == "servicenow" and out[0].stage == "closure"
+    assert [o.channel for o in out] == ["servicenow", "xmatters"]
+    assert all(o.ok is False and o.stage == "closure" for o in out)
 
 
 def test_short_description_does_not_repeat_the_service_prefix(stage1_pkg, sn_settings) -> None:  # noqa: F811

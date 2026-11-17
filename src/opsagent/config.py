@@ -46,6 +46,13 @@ class Settings(BaseSettings):
     servicenow_caller_id: str = Field(default="", alias="SERVICENOW_CALLER_ID")
     servicenow_category: str = Field(default="software", alias="SERVICENOW_CATEGORY")
     servicenow_resolve_on_close: bool = Field(default=False, alias="SERVICENOW_RESOLVE_ON_CLOSE")
+    # xMatters on-call paging: a workflow trigger URL raises the event; xM API credentials (a REST user, or an API
+    # key id and secret) allow annotations and termination of that event afterwards.
+    xmatters_trigger_url: str = Field(default="", alias="XMATTERS_TRIGGER_URL")
+    xmatters_user: str = Field(default="", alias="XMATTERS_USER")
+    xmatters_password: str = Field(default="", alias="XMATTERS_PASSWORD")
+    xmatters_recipients: str = Field(default="", alias="XMATTERS_RECIPIENTS")
+    xmatters_terminate_on_close: bool = Field(default=True, alias="XMATTERS_TERMINATE_ON_CLOSE")
 
     # Optional integrations and feature flags
     aws_docs_mcp: bool = Field(default=False, alias="AWS_DOCS_MCP")
@@ -134,6 +141,24 @@ class Settings(BaseSettings):
     def servicenow_enabled(self) -> bool:
         has_auth = bool(self.servicenow_token.strip()) or bool(self.servicenow_user.strip() and self.servicenow_password)
         return bool(self.servicenow_base_url) and has_auth
+
+    @property
+    def xmatters_enabled(self) -> bool:
+        return self.xmatters_trigger_url.strip().startswith(("https://", "http://"))
+
+    @property
+    def xmatters_api_enabled(self) -> bool:
+        return self.xmatters_enabled and bool(self.xmatters_user.strip() and self.xmatters_password)
+
+    @property
+    def xmatters_base_url(self) -> str:
+        """Scheme and host of the trigger URL: the xM API lives on the same host under /api/xm/1."""
+        url = self.xmatters_trigger_url.strip()
+        if not url:
+            return ""
+        scheme, _, rest = url.partition("://")
+        host = rest.split("/", 1)[0].split("?", 1)[0]
+        return f"{scheme}://{host}" if scheme and host else ""
 
     @property
     def llm_configured(self) -> bool:

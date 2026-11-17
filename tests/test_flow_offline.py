@@ -18,8 +18,9 @@ def isolated_settings(tmp_path, monkeypatch):
     monkeypatch.setenv("OPSAGENT_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("OPSAGENT_OUTBOX_DIR", str(tmp_path / "outbox"))
     monkeypatch.setenv("OPSAGENT_RUNS_DIR", str(tmp_path / "runs"))
-    monkeypatch.setenv("TEAMS_WEBHOOK_URL", "")
-    monkeypatch.setenv("SMTP_HOST", "")
+    # every outbound channel off, whatever the developer's .env holds: offline tests must never reach a live system
+    for var in ("TEAMS_WEBHOOK_URL", "SMTP_HOST", "SERVICENOW_INSTANCE", "SERVICENOW_TOKEN", "XMATTERS_TRIGGER_URL"):
+        monkeypatch.setenv(var, "")
     from opsagent import config
 
     config.get_settings.cache_clear()
@@ -103,8 +104,9 @@ def test_flow_runs_end_to_end_offline(isolated_settings, monkeypatch):
     assert run["artifacts"]["package_stage2"]["code_correlation"]["verdict"] == "shared"
     assert run["artifacts"]["kb_record"]["label"] == "pending"
     stages = [r["stage"] for r in run["receipts"]]
-    assert stages == ["stage1", "stage2", "closure"]  # fake deliver per stage, then the ticket closure note
-    assert run["receipts"][2]["channel"] == "servicenow" and run["receipts"][2]["ok"] is False  # not configured here
+    assert stages == ["stage1", "stage2", "closure", "closure"]  # fake deliver per stage, then the ticket + page closure
+    assert [r["channel"] for r in run["receipts"][2:]] == ["servicenow", "xmatters"]
+    assert all(r["ok"] is False for r in run["receipts"][2:])  # neither is configured here
     # the severity policy in force is recorded with the run, and the parse step names the rule that fired
     assert run["severity_policy"]["source"].endswith("severity.yaml") and run["severity_policy"]["rules"][0] == "oom_event -> critical"
     parse = next(st for st in run["steps"] if st["name"] == "triage.parse")
@@ -160,7 +162,7 @@ def test_policy_decides_who_gets_paged(isolated_settings, monkeypatch, tmp_path)
         paged = run_event(EVENT, force=True)
         assert paged["severity"] == "warning"
         assert {"stage1", "stage2", "close"} <= set(paged["timings"])
-        assert [r["stage"] for r in paged["receipts"]] == ["stage1", "stage2", "closure"]
+        assert [r["stage"] for r in paged["receipts"]] == ["stage1", "stage2", "closure", "closure"]
 
         _use_policy(tmp_path, monkeypatch, "rules:\n  - severity: warning\n    when: oom_event\n")
         quiet = run_event(EVENT, force=True)

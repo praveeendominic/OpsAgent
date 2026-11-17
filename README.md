@@ -47,7 +47,7 @@ src/opsagent/
   kb/                   FAISS store, document ingestion, closed incidents, curated docs
   tools/                CrewAI tools: knowledge base search, closed incidents, repository tools
   crews/                triage, diagnostics, code_correlation, incident_bridge, knowledge (YAML configs)
-  notify/               Adaptive Cards, Teams webhook, SMTP email, ServiceNow Table API, outbox
+  notify/               Adaptive Cards, Teams webhook, SMTP email, ServiceNow Table API, xMatters paging, outbox
   flow/                 IncidentFlow, state, incident ids and de-duplication
   ui/                   Streamlit run recorder
   tracing.py            run recorder (run.json), token and cost accounting
@@ -72,6 +72,28 @@ steps and a stage 2 that arrives without a stage 1 record still opens one. Every
 target; credentials never appear in receipts or outbox files. `SERVICENOW_INSTANCE` accepts the subdomain
 (`dev12345`), the host or the full URL. A free Personal Developer Instance from developer.servicenow.com is enough for
 the demo; the integration user needs the `itil` role.
+
+## xMatters
+
+With `XMATTERS_TRIGGER_URL` in `.env` the Incident Bridge pages on-call through xMatters. The URL is the trigger of a
+workflow in Flow Designer: either an **HTTP trigger** whose flow has a *Create Event* step mapping the payload
+properties below, or the inbound integration URL of a **Create Event** form whose layout has those properties. Both
+exist on the free xMatters plan (xmatters.com, "Free" tier; the on-call group is created under Groups).
+
+| Flow step | xMatters action | Content |
+|---|---|---|
+| `page_stage1` | POST the trigger URL, which raises the event and pages the recipients | `properties`: incident_id, event_id, stage, severity, service, instance_id, summary, details (stage 1 card as text), brand, trace_url; `priority` HIGH / MEDIUM / LOW from the severity policy (`xmatters:` block); `recipients` from `XMATTERS_RECIPIENTS` when set |
+| `page_stage2` | POST an annotation on the event | the stage 2 card as text: RCA, citations, code verdict, fixes |
+| watchdog | POST an annotation | "diagnosis still running" delay notice |
+| `close` | POST an annotation, then terminate the event (`XMATTERS_TERMINATE_ON_CLOSE=1`, the default) | knowledge-record digest and the label workflow |
+
+The trigger answers with a `requestId`; the sender keeps it in `outbox/<incident>/xmatters.json` and resolves it to
+the event through `GET /api/xm/1/events?requestId=...` when stage 2 arrives. Annotations and termination need the
+xM API, so `XMATTERS_USER` / `XMATTERS_PASSWORD` must be a user with the *REST Web Service User* role or an API key id
+and secret (both are basic auth). Without them the trigger still pages at stage 1; stage 2 and the delay notice then
+raise a follow-up event carrying the same `incident_id` and a `stage` property, and the closure reports that it could
+not annotate. Receipts read `event requested (requestId ..., priority HIGH)`, `annotated event 1234: diagnosis added`
+or `annotated and terminated event 1234`; the trigger URL's apiKey, if any, never appears in a receipt.
 
 ## Tests
 
@@ -112,6 +134,10 @@ servicenow:                 # severity -> impact, urgency; the instance derives 
   critical: {impact: 1, urgency: 1}
   warning:  {impact: 2, urgency: 2}
   info:     {impact: 3, urgency: 3}
+xmatters:                   # severity -> priority of the xMatters event
+  critical: HIGH
+  warning: MEDIUM
+  info: LOW
 paging:                     # severities that page stage 1 immediately and run the diagnosis crews
   immediate: [critical]
 ```
