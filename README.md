@@ -75,22 +75,27 @@ the demo; the integration user needs the `itil` role.
 
 ## xMatters
 
-With `XMATTERS_TRIGGER_URL` in `.env` the Incident Bridge pages on-call through xMatters. The URL is the trigger of a
-workflow in Flow Designer: either an **HTTP trigger** whose flow has a *Create Event* step mapping the payload
-properties below, or the inbound integration URL of a **Create Event** form whose layout has those properties. Both
-exist on the free xMatters plan (xmatters.com, "Free" tier; the on-call group is created under Groups).
+With `XMATTERS_TRIGGER_URL` in `.env` the Incident Bridge pages on-call through xMatters. The quickest trigger is the
+stock **Send Alert** form every instance ships with, through the xM API:
+`https://<company>.xmatters.com/api/xm/1/forms/<form id>/triggers` (form id from `GET /api/xm/1/forms`), with
+`XMATTERS_PROPERTIES=summary=Summary,details=Message` because that form's layout carries only those two properties.
+Any Flow Designer workflow works as well: an **HTTP trigger** whose flow has a *Create Event* step, or the inbound
+integration URL of a **Create Event** form whose layout defines the payload properties below (then leave
+`XMATTERS_PROPERTIES` empty). All of this exists on the free xMatters plan; on-call groups are created under Groups
+and xMatters handles the escalation (for example L1 Support first, L2 Support after five minutes).
 
 | Flow step | xMatters action | Content |
 |---|---|---|
-| `page_stage1` | POST the trigger URL, which raises the event and pages the recipients | `properties`: incident_id, event_id, stage, severity, service, instance_id, summary, details (stage 1 card as text), brand, trace_url; `priority` HIGH / MEDIUM / LOW from the severity policy (`xmatters:` block); `recipients` from `XMATTERS_RECIPIENTS` when set |
+| `page_stage1` | POST the trigger URL, which raises the event and pages the recipients | `properties`: incident_id, event_id, stage, severity, service, instance_id, summary, details (stage 1 card as text), brand, trace_url; `priority` HIGH / MEDIUM / LOW from the severity policy (`xmatters:` block); `recipients` from `XMATTERS_RECIPIENTS` (group or user names, or uuids, sent in the `id` field: a form trigger silently drops recipients given as `targetName`) |
 | `page_stage2` | POST an annotation on the event | the stage 2 card as text: RCA, citations, code verdict, fixes |
 | watchdog | POST an annotation | "diagnosis still running" delay notice |
 | `close` | POST an annotation, then terminate the event (`XMATTERS_TERMINATE_ON_CLOSE=1`, the default) | knowledge-record digest and the label workflow |
 
 The trigger answers with a `requestId`; the sender keeps it in `outbox/<incident>/xmatters.json` and resolves it to
 the event through `GET /api/xm/1/events?requestId=...` when stage 2 arrives. Annotations and termination need the
-xM API, so `XMATTERS_USER` / `XMATTERS_PASSWORD` must be a user with the *REST Web Service User* role or an API key id
-and secret (both are basic auth). Without them the trigger still pages at stage 1; stage 2 and the delay notice then
+xM API, so `XMATTERS_USER` / `XMATTERS_PASSWORD` must be a user with the *REST Web Service User* role (the user name
+is the web login, usually the email address) or an API key id and secret (both are basic auth). Without them the
+trigger still pages at stage 1 when it is a Flow Designer URL; stage 2 and the delay notice then
 raise a follow-up event carrying the same `incident_id` and a `stage` property, and the closure reports that it could
 not annotate. Receipts read `event requested (requestId ..., priority HIGH)`, `annotated event 1234: diagnosis added`
 or `annotated and terminated event 1234`; the trigger URL's apiKey, if any, never appears in a receipt.

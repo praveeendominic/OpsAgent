@@ -149,10 +149,10 @@ def test_stage1_raises_event_then_stage2_annotates_and_close_terminates(monkeypa
     assert "SECRET-KEY-123" not in (r1.detail + r1.target)
     payload = fake.events["evt-uuid-1"]["payload"]
     assert payload["priority"] == "HIGH"
-    assert payload["recipients"] == [{"targetName": "Platform On-call"}, {"targetName": "dominic.ops"}]
+    assert payload["recipients"] == [{"id": "Platform On-call"}, {"id": "dominic.ops"}]  # id, not targetName: see _recipients
     props = payload["properties"]
     assert props["incident_id"] == stage1_pkg.incident_id and props["stage"] == "stage1" and props["severity"] == "critical"
-    assert props["summary"].startswith("[CRITICAL] orders-api on ") and props["details"] == "stage one body"
+    assert props["summary"].startswith("[CRITICAL] orders-api on ") and props["details"].endswith("stage one body")
     assert fake.calls[0]["init"]["auth"] == ("opsagent-key-id", "not-a-real-secret")
     state = json.loads((Path(xm_settings.outbox_path) / stage1_pkg.incident_id / "xmatters.json").read_text(encoding="utf-8"))
     assert state["request_id"] == "req-1" and state["event_id"] is None
@@ -162,7 +162,10 @@ def test_stage1_raises_event_then_stage2_annotates_and_close_terminates(monkeypa
     assert r2.detail == "annotated event 5001: diagnosis added"
     assert r2.target == "https://acme.xmatters.com/api/xm/1/events/evt-uuid-1"
     notes = fake.events["evt-uuid-1"]["annotations"]
-    assert len(notes) == 1 and "Stage 2 of 2" in notes[0] and "ORDER_CACHE" in notes[0]
+    assert len(notes) == 1 and notes[0].startswith("Stage 2 of 2") and len(notes[0]) <= 1000
+    # the annotation is a digest built from the package, not the card: root cause, code verdict and fixes
+    assert stage2_pkg.diagnosis.root_cause.summary[:60] in notes[0]
+    assert "Code verdict: shared" in notes[0] and "Immediate fix:" in notes[0]
     assert len(fake.events) == 1, "stage 2 must not raise a second event when it can annotate"
     state = xm.load_state(stage1_pkg.incident_id, xm_settings)
     assert state["event_id"] == "evt-uuid-1" and state["event_number"] == "5001"
@@ -210,6 +213,18 @@ def test_event_not_yet_visible_falls_back_then_recovers(monkeypatch, stage1_pkg,
     assert r2.ok and r2.detail.startswith("follow-up event requested")
     done = xm.send_note(stage1_pkg.incident_id, "closed", "closure", settings=xm_settings, terminate=True)
     assert done.ok and done.detail == "annotated and terminated event 5001"
+
+
+def test_annotations_never_exceed_the_xmatters_limit(monkeypatch, stage1_pkg, xm_settings) -> None:  # noqa: F811
+    fake = FakeXMatters()
+    _install(monkeypatch, fake)
+    assert xm.send_stage(stage1_pkg, "one", settings=xm_settings).ok
+    long_text = "\n".join(f"line {i}: " + "x" * 60 for i in range(80))  # ~5 KB closure text
+    done = xm.send_note(stage1_pkg.incident_id, long_text, "closure", settings=xm_settings, terminate=True)
+    assert done.ok, done.detail
+    comment = fake.events["evt-uuid-1"]["annotations"][-1]
+    assert len(comment) <= 1000 and comment.endswith("...") and comment.startswith("line 0:")
+    assert xm.clamp("short") == "short"
 
 
 def test_note_without_a_stage1_event(xm_settings) -> None:
@@ -276,6 +291,37 @@ def test_deliver_fan_out_includes_xmatters(monkeypatch, stage1_pkg, stage2_pkg, 
     assert closure["servicenow"].ok is False  # not configured in this fixture
     assert fake.events["evt-uuid-1"]["status"] == "TERMINATED"
     assert "unbounded in-process order cache" in fake.events["evt-uuid-1"]["annotations"][-1]
+
+
+def test_property_map_for_the_stock_send_alert_form(monkeypatch, stage1_pkg, stage2_pkg, tmp_path: Path) -> None:  # noqa: F811
+    form_trigger = "https://acme.xmatters.com/api/xm/1/forms/133b771f-03a6-4df0-b57c-f491364268ba/triggers"
+    s = Settings(_env_file=None, OPSAGENT_OUTBOX_DIR=str(tmp_path), XMATTERS_TRIGGER_URL=form_trigger,
+                 XMATTERS_USER="u", XMATTERS_PASSWORD="p", XMATTERS_RECIPIENTS="L1 Support",
+                 XMATTERS_PROPERTIES="summary=Summary, details=Message")
+    assert s.xmatters_property_map == {"summary": "Summary", "details": "Message"}
+    fake = FakeXMatters()
+    _install(monkeypatch, fake)
+
+    r1 = xm.send_stage(stage1_pkg, "stage one card", settings=s)
+    assert r1.ok, r1.detail
+    payload = fake.events["evt-uuid-1"]["payload"]
+    assert set(payload["properties"]) == {"Summary", "Message"}  # nothing the form does not define
+    assert payload["properties"]["Summary"].startswith("[CRITICAL] orders-api on ")
+    assert payload["properties"]["Message"].startswith(f"OpsAgent incident {stage1_pkg.incident_id} (stage1)")
+    assert "stage one card" in payload["properties"]["Message"]
+    assert payload["recipients"] == [{"id": "L1 Support"}]
+    assert fake.calls[1]["url"] == form_trigger
+
+    # a follow-up event (no event visible yet) is mapped the same way
+    fake.visible = False
+    r2 = xm.send_stage(stage2_pkg, "diagnosis", settings=s)
+    assert r2.ok and r2.detail.startswith("follow-up event requested")
+    assert set(fake.events["evt-uuid-2"]["payload"]["properties"]) == {"Summary", "Message"}
+
+    # a map that names none of the payload keys is a configuration error, reported, never a half-empty page
+    broken = s.model_copy(update={"xmatters_properties": "subject=Summary"})
+    r = xm.send_stage(stage1_pkg, "body", settings=broken)
+    assert r.ok is False and "maps none of the payload keys" in r.detail
 
 
 def test_closure_keeps_the_event_open_when_asked(monkeypatch, stage1_pkg, tmp_path: Path) -> None:  # noqa: F811

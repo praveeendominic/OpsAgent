@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     xmatters_user: str = Field(default="", alias="XMATTERS_USER")
     xmatters_password: str = Field(default="", alias="XMATTERS_PASSWORD")
     xmatters_recipients: str = Field(default="", alias="XMATTERS_RECIPIENTS")
+    # "payload_key=Form Property" pairs, comma-separated, for forms whose layout does not carry OpsAgent's property
+    # names (the stock Send Alert form: "summary=Summary,details=Message"). Empty sends every key under its own name.
+    xmatters_properties: str = Field(default="", alias="XMATTERS_PROPERTIES")
     xmatters_terminate_on_close: bool = Field(default=True, alias="XMATTERS_TERMINATE_ON_CLOSE")
 
     # Optional integrations and feature flags
@@ -149,6 +152,16 @@ class Settings(BaseSettings):
     @property
     def xmatters_api_enabled(self) -> bool:
         return self.xmatters_enabled and bool(self.xmatters_user.strip() and self.xmatters_password)
+
+    @property
+    def xmatters_property_map(self) -> dict[str, str]:
+        """payload key -> form property name, parsed from XMATTERS_PROPERTIES; empty means no mapping."""
+        out: dict[str, str] = {}
+        for pair in self.xmatters_properties.split(","):
+            key, sep, name = pair.partition("=")
+            if sep and key.strip() and name.strip():
+                out[key.strip()] = name.strip()
+        return out
 
     @property
     def xmatters_base_url(self) -> str:

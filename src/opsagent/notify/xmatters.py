@@ -11,7 +11,10 @@ annotate. Never raises: every outcome is a DeliveryReceipt.
 Payload shape (Create Event form convention, also easy to map in an HTTP trigger):
     {"properties": {incident_id, event_id, stage, severity, service, instance_id, summary, details, brand, trace_url},
      "priority": "HIGH" | "MEDIUM" | "LOW",            # from the severity policy (xmatters block)
-     "recipients": [{"targetName": "Platform On-call"}]}  # XMATTERS_RECIPIENTS, optional
+     "recipients": [{"id": "Platform On-call"}]}         # XMATTERS_RECIPIENTS (names or uuids), optional
+
+A form whose layout uses other property names takes XMATTERS_PROPERTIES ("summary=Summary,details=Message" for the
+stock Send Alert form, triggered at /api/xm/1/forms/<form id>/triggers): only the mapped keys are sent, renamed.
 """
 from __future__ import annotations
 
@@ -30,7 +33,7 @@ NOT_CONFIGURED = "not configured: set XMATTERS_TRIGGER_URL (and XMATTERS_USER/XM
 STATE_FILE = "xmatters.json"
 _API = "/api/xm/1"
 MAX_DETAILS_CHARS = 4000
-MAX_COMMENT_CHARS = 20000
+MAX_COMMENT_CHARS = 1000  # xMatters rejects longer annotation comments (HTTP 400)
 
 
 def _now() -> datetime:
@@ -88,7 +91,7 @@ class XMattersClient:
 
     def annotate(self, event_id: str, comment: str) -> dict:
         with self._client() as client:
-            return self._json(client.post(f"{self.base}{_API}/events/{event_id}/annotations", json={"comment": comment[:MAX_COMMENT_CHARS]}))
+            return self._json(client.post(f"{self.base}{_API}/events/{event_id}/annotations", json={"comment": clamp(comment)}))
 
     def terminate(self, event_id: str) -> dict:
         with self._client() as client:
@@ -130,9 +133,21 @@ def save_state(incident_id: str, state: dict, settings: Settings | None = None) 
 
 
 # ------------------------------------------------------------------------------------------------ payloads
+def map_properties(props: dict[str, Any], settings: Settings) -> dict[str, Any]:
+    """Rename / restrict the payload properties to what the target form's layout defines (XMATTERS_PROPERTIES)."""
+    mapping = settings.xmatters_property_map
+    if not mapping:
+        return props
+    mapped = {name: props[key] for key, name in mapping.items() if key in props}
+    if not mapped:
+        raise XMattersError(f"XMATTERS_PROPERTIES maps none of the payload keys ({', '.join(sorted(props))})")
+    return mapped
+
+
 def _recipients(settings: Settings) -> list[dict]:
+    # "id" takes a uuid or a target name; a form trigger silently ignores recipients given as "targetName"
     names = [n.strip() for n in settings.xmatters_recipients.split(",") if n.strip()]
-    return [{"targetName": n} for n in names]
+    return [{"id": n} for n in names]
 
 
 def event_payload(pkg: IncidentPackage, body: str, settings: Settings, priority: str) -> dict:
@@ -145,11 +160,11 @@ def event_payload(pkg: IncidentPackage, body: str, settings: Settings, priority:
         "service": pkg.service_name,
         "instance_id": pkg.instance_id,
         "summary": f"[{sev.upper()}] {pkg.title}",
-        "details": body[:MAX_DETAILS_CHARS],
+        "details": _details(pkg.incident_id, pkg.stage, body, pkg.trace_url),
         "brand": pkg.brand,
         "trace_url": pkg.trace_url or "",
     }
-    payload: dict[str, Any] = {"properties": props, "priority": priority}
+    payload: dict[str, Any] = {"properties": map_properties(props, settings), "priority": priority}
     recipients = _recipients(settings)
     if recipients:
         payload["recipients"] = recipients
@@ -164,19 +179,56 @@ def follow_up_payload(incident_id: str, stage: str, severity: str, text: str, se
         "stage": stage,
         "severity": severity,
         "summary": f"[{severity.upper()}] {incident_id}: {label}",
-        "details": text[:MAX_DETAILS_CHARS],
+        "details": _details(incident_id, stage, text, None),
         "brand": settings.brand,
     }
-    payload: dict[str, Any] = {"properties": props, "priority": priority}
+    payload: dict[str, Any] = {"properties": map_properties(props, settings), "priority": priority}
     recipients = _recipients(settings)
     if recipients:
         payload["recipients"] = recipients
     return payload
 
 
+def _details(incident_id: str, stage: str, body: str, trace_url: str | None) -> str:
+    """Message body that stands on its own when the form carries only a summary and a message."""
+    head = f"OpsAgent incident {incident_id} ({stage})"
+    tail = f"\n\nRun recorder: {trace_url}" if trace_url else ""
+    room = MAX_DETAILS_CHARS - len(head) - len(tail) - 2
+    return f"{head}\n\n{body[:max(room, 0)]}{tail}"
+
+
+def clamp(text: str, limit: int = MAX_COMMENT_CHARS) -> str:
+    """Fit a comment into xMatters' annotation limit, cutting at a line break when one is near the end."""
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    cut = text[: limit - 3]
+    nl = cut.rfind("\n")
+    if nl > limit * 0.6:
+        cut = cut[:nl]
+    return cut.rstrip() + "..."
+
+
 def stage_comment(pkg: IncidentPackage, body: str) -> str:
-    label = "Stage 2 of 2: diagnosis" if pkg.stage == "stage2" else "Stage 1 of 2: triage"
-    return f"{pkg.brand} OpsAgent, {label} for {pkg.incident_id}\n\n{body}"
+    """A digest that fits an annotation: the full card already went to the ticket, email and outbox."""
+    if pkg.stage != "stage2":
+        return clamp(f"Stage 1 of 2: triage for {pkg.incident_id}\n{pkg.headline}\n\n{pkg.summary}")
+    lines = [f"Stage 2 of 2: diagnosis for {pkg.incident_id}", pkg.headline]
+    d, c = pkg.diagnosis, pkg.code_correlation
+    if d is not None:
+        lines.append(f"Root cause ({d.root_cause.category}, {d.root_cause.confidence}): {d.root_cause.summary}")
+    if c is not None:
+        where = f" at {c.locations[0].file}" + (f"::{c.locations[0].symbol}" if c.locations[0].symbol else "") if c.locations else ""
+        lines.append(f"Code verdict: {c.verdict} ({c.confidence:.0%}){where}. {c.developer_action}")
+    if pkg.recommended_fix is not None:
+        lines.append(f"Immediate fix: {pkg.recommended_fix.detail}")
+    if pkg.durable_fix is not None:
+        lines.append(f"Durable fix: {pkg.durable_fix.detail}")
+    if not d and not c:
+        lines.append(body)
+    if pkg.trace_url:
+        lines.append(f"Full report: {pkg.trace_url}")
+    return clamp("\n".join(lines))
 
 
 # ------------------------------------------------------------------------------------------------ helpers
