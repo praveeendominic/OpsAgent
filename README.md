@@ -47,7 +47,7 @@ src/opsagent/
   kb/                   FAISS store, document ingestion, closed incidents, curated docs
   tools/                CrewAI tools: knowledge base search, closed incidents, repository tools
   crews/                triage, diagnostics, code_correlation, incident_bridge, knowledge (YAML configs)
-  notify/               Adaptive Cards, Teams webhook, SMTP email, ServiceNow Table API, xMatters paging, outbox
+  notify/               Adaptive Cards, Teams webhook, SMTP email, ServiceNow Table API, xMatters heads-up call, outbox
   flow/                 IncidentFlow, state, incident ids and de-duplication
   ui/                   Streamlit run recorder
   tracing.py            run recorder (run.json), token and cost accounting
@@ -75,30 +75,43 @@ the demo; the integration user needs the `itil` role.
 
 ## xMatters
 
-With `XMATTERS_TRIGGER_URL` in `.env` the Incident Bridge pages on-call through xMatters. The quickest trigger is the
-stock **Send Alert** form every instance ships with, through the xM API:
+xMatters is the heads-up call. With `XMATTERS_TRIGGER_URL`, `XMATTERS_USER` and `XMATTERS_PASSWORD` in `.env`, the
+Incident Bridge raises **one xMatters event at stage 1** that rings on-call with a short spoken message, and the
+`close` step terminates that event. Everything else, the stage 2 diagnosis, the delay notice and the closure text,
+goes to the ticket, email, Teams and the outbox: on-call picks up the phone, hears what is going on and where the
+report is, and reads the rest there.
+
+The trigger is the stock **Send Alert** form every instance ships with, through the xM API:
 `https://<company>.xmatters.com/api/xm/1/forms/<form id>/triggers` (form id from `GET /api/xm/1/forms`), with
 `XMATTERS_PROPERTIES=summary=Summary,details=Message` because that form's layout carries only those two properties.
-Any Flow Designer workflow works as well: an **HTTP trigger** whose flow has a *Create Event* step, or the inbound
-integration URL of a **Create Event** form whose layout defines the payload properties below (then leave
-`XMATTERS_PROPERTIES` empty). All of this exists on the free xMatters plan; on-call groups are created under Groups
-and xMatters handles the escalation (for example L1 Support first, L2 Support after five minutes).
+A Flow Designer trigger works as well (HTTP trigger with a *Create Event* step, or a *Create Event* form whose layout
+defines the payload properties below; leave `XMATTERS_PROPERTIES` empty). `XMATTERS_USER` is the xMatters web login
+(usually the email address) of a user with the *REST Web Service User* role, or an API key id and secret; both are
+basic auth. On-call groups are created under Groups and xMatters runs the escalation (L1 Support first, L2 Support
+after five minutes). All of this exists on the free xMatters plan, with the device limits noted below.
 
 | Flow step | xMatters action | Content |
 |---|---|---|
-| `page_stage1` | POST the trigger URL, which raises the event and pages the recipients | `properties`: incident_id, event_id, stage, severity, service, instance_id, summary, details (stage 1 card as text), brand, trace_url; `priority` HIGH / MEDIUM / LOW from the severity policy (`xmatters:` block); `recipients` from `XMATTERS_RECIPIENTS` (group or user names, or uuids, sent in the `id` field: a form trigger silently drops recipients given as `targetName`) |
-| `page_stage2` | POST an annotation on the event | the stage 2 card as text: RCA, citations, code verdict, fixes |
-| watchdog | POST an annotation | "diagnosis still running" delay notice |
-| `close` | POST an annotation, then terminate the event (`XMATTERS_TERMINATE_ON_CLOSE=1`, the default) | knowledge-record digest and the label workflow |
+| `page_stage1` | POST the trigger URL: raises the event, xMatters calls the recipients | `properties`: incident_id, event_id, severity, service, instance_id, ticket, summary, details (the spoken message), brand, trace_url; `priority` HIGH / MEDIUM / LOW from the severity policy (`xmatters:` block); `recipients` from `XMATTERS_RECIPIENTS` (group or user names, or uuids, in the `id` field: a form trigger silently drops `targetName`); `targetDeviceNames` from `XMATTERS_DEVICES`; `voicemailOptions` leave the message when the call is not answered |
+| `page_stage2`, watchdog | nothing | the diagnosis and the delay notice go to the ticket, email, Teams and the outbox |
+| `close` | terminate the event (`XMATTERS_TERMINATE_ON_CLOSE=1`, the default) | an unanswered call stops retrying and the group escalation does not fire for an incident the agent has handled; set `0` to let the escalation run to the end |
 
-The trigger answers with a `requestId`; the sender keeps it in `outbox/<incident>/xmatters.json` and resolves it to
-the event through `GET /api/xm/1/events?requestId=...` when stage 2 arrives. Annotations and termination need the
-xM API, so `XMATTERS_USER` / `XMATTERS_PASSWORD` must be a user with the *REST Web Service User* role (the user name
-is the web login, usually the email address) or an API key id and secret (both are basic auth). Without them the
-trigger still pages at stage 1 when it is a Flow Designer URL; stage 2 and the delay notice then
-raise a follow-up event carrying the same `incident_id` and a `stage` property, and the closure reports that it could
-not annotate. Receipts read `event requested (requestId ..., priority HIGH)`, `annotated event 1234: diagnosis added`
-or `annotated and terminated event 1234`; the trigger URL's apiKey, if any, never appears in a receipt.
+The spoken message is plain sentences, no markdown, no links and no incident id (a 17-character token read digit by
+digit): *"Justo Global OpsAgent heads-up. A critical incident is open on orders-api. Orders API was OOM-killed and
+restarted twice in 10 minutes. ServiceNow ticket INC0010004 has the stage one report. The diagnosis follows there in
+a minute or two."* The ticket number comes from the ServiceNow receipt of the same stage, so the ticket channel runs
+first. `XMATTERS_DEVICES` names the devices to ring, as they appear on the person's xMatters profile; empty notifies
+every device the recipients own, email included, which duplicates the email channel. The **free plan** carries email
+and the xMatters mobile app only (`Android Phone` / `iPhone`, registered when the person signs in to the app; the push
+notification rings the phone and shows the message). Voice calls and SMS (`Mobile Phone`, `Work Phone`, `SMS Phone`)
+need a paid plan: the xM API refuses to create those devices on a free instance. The default
+`XMATTERS_DEVICES=Android Phone,iPhone,Mobile Phone,Work Phone` rings whichever of these the on-call person has.
+
+The trigger answers with the event (`id`, `eventId`, `requestId`); the sender keeps it in `outbox/<incident>/xmatters.json`
+and the close step terminates it by id (a Flow Designer trigger answers with a `requestId` only, resolved through
+`GET /api/xm/1/events?requestId=...`). Receipts read `heads-up event 94001000 raised (priority HIGH) for L1 Support on
+Mobile Phone, Work Phone` and `terminated heads-up event 94001000: call retries and escalation stopped`; failures are
+`ok: false` receipts with the HTTP status and body, never exceptions. Offline tests use a fake trigger and xM API.
 
 ## Tests
 

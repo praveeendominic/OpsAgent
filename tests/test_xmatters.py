@@ -1,11 +1,10 @@
-"""Offline tests for the xMatters channel: a fake trigger URL + xM API records every request; no network."""
+"""Offline tests for the xMatters heads-up call: a fake trigger URL + xM API records every request; no network."""
 from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-import httpx
 import pytest
 
 from opsagent.config import Settings
@@ -14,7 +13,8 @@ from opsagent.notify import xmatters as xm
 from opsagent.schemas.kb import KBRecord
 from tests.test_notify import stage1_pkg, stage2_pkg  # noqa: F401 - fixtures
 
-TRIGGER = "https://acme.xmatters.com/api/integration/1/functions/0a1b2c3d/triggers?apiKey=SECRET-KEY-123"
+FORM_TRIGGER = "https://acme.xmatters.com/api/xm/1/forms/133b771f-03a6-4df0-b57c-f491364268ba/triggers"
+FLOW_TRIGGER = "https://acme.xmatters.com/api/integration/1/functions/0a1b2c3d/triggers?apiKey=SECRET-KEY-123"
 
 
 class _Resp:
@@ -31,17 +31,22 @@ class _Resp:
 
 
 class FakeXMatters:
-    """Trigger URL answers 202 + requestId; events become visible to GET /events?requestId after `visible_after` polls."""
+    """A form trigger answers with the event (id, eventId, requestId); `flow_designer=True` answers with the requestId
+    only, and the event becomes visible to GET /events?requestId after `visible_after` polls."""
 
-    def __init__(self, fail_status: int | None = None, visible_after: int = 0, visible: bool = True):
+    def __init__(self, fail_status: int | None = None, flow_designer: bool = False, visible_after: int = 0):
         self.calls: list[dict] = []
         self.events: dict[str, dict] = {}  # event uuid -> record
         self.by_request: dict[str, str] = {}
         self.fail_status = fail_status
+        self.flow_designer = flow_designer
         self.visible_after = visible_after
-        self.visible = visible
         self._n = 0
         self._polls = 0
+
+    @property
+    def posts(self) -> list[dict]:
+        return [c for c in self.calls if c.get("method") == "POST"]
 
     def client_factory(self):
         fake = self
@@ -64,17 +69,14 @@ class FakeXMatters:
                     fake._n += 1
                     rid = f"req-{fake._n}"
                     uuid = f"evt-uuid-{fake._n}"
-                    fake.events[uuid] = {"id": uuid, "eventId": str(5000 + fake._n), "status": "ACTIVE",
-                                         "payload": json, "annotations": []}
+                    fake.events[uuid] = {"id": uuid, "eventId": str(94000000 + fake._n), "status": "ACTIVE", "payload": json}
                     fake.by_request[rid] = uuid
-                    return _Resp(202, {"requestId": rid})
-                if url.endswith("/annotations"):
-                    uuid = url.rsplit("/", 2)[1]
-                    fake.events[uuid]["annotations"].append(json["comment"])
-                    return _Resp(201, {"id": f"ann-{len(fake.events[uuid]['annotations'])}"})
+                    if fake.flow_designer:
+                        return _Resp(202, {"requestId": rid})
+                    return _Resp(200, {"id": uuid, "eventId": fake.events[uuid]["eventId"], "requestId": rid, "status": "ACTIVE"})
                 if url.endswith("/api/xm/1/events"):
                     fake.events[json["id"]]["status"] = json["status"]
-                    return _Resp(200, {"id": json["id"], "status": json["status"]})
+                    return _Resp(202, {"id": json["id"], "status": json["status"]})
                 return _Resp(404, text="unknown endpoint")
 
             def get(self, url, params=None, **k):
@@ -83,7 +85,7 @@ class FakeXMatters:
                     return _Resp(fake.fail_status, text="boom")
                 fake._polls += 1
                 uuid = fake.by_request.get((params or {}).get("requestId", ""))
-                if not uuid or not fake.visible or fake._polls <= fake.visible_after:
+                if not uuid or fake._polls <= fake.visible_after:
                     return _Resp(200, {"count": 0, "total": 0, "data": []})
                 e = fake.events[uuid]
                 return _Resp(200, {"count": 1, "total": 1, "data": [{"id": e["id"], "eventId": e["eventId"], "status": e["status"]}]})
@@ -91,245 +93,228 @@ class FakeXMatters:
         return _Client
 
 
+def _install(monkeypatch: pytest.MonkeyPatch, fake: FakeXMatters) -> None:
+    monkeypatch.setattr(xm.httpx, "Client", fake.client_factory())
+
+
+def _kb(pkg) -> KBRecord:
+    return KBRecord(
+        incident_id=pkg.incident_id, event_id=pkg.event_id, event_type="ec2.oom_kill", severity="critical",
+        digest="orders-api OOM-killed", root_cause_summary="unbounded in-process order cache", root_cause_category="application_memory_leak",
+        verdict="shared", code_location="app/orders/cache.py::ORDER_CACHE", immediate_fix="MemoryHigh=1228M MemoryMax=1536M",
+        durable_fix="bound the cache", citations=["kb://systemd/resource-control#memorymax"], created_at=datetime.now(timezone.utc),
+    )
+
+
 @pytest.fixture()
 def xm_settings(tmp_path: Path) -> Settings:
+    """The live shape: Send Alert form trigger, phones only."""
     return Settings(
         _env_file=None,
         OPSAGENT_OUTBOX_DIR=str(tmp_path),
-        XMATTERS_TRIGGER_URL=TRIGGER,
+        XMATTERS_TRIGGER_URL=FORM_TRIGGER,
+        XMATTERS_USER="oncall@acme.example",
+        XMATTERS_PASSWORD="not-a-real-secret",
+        XMATTERS_RECIPIENTS="L1 Support",
+        XMATTERS_DEVICES="Mobile Phone, Work Phone",
+        XMATTERS_PROPERTIES="summary=Summary,details=Message",
+    )
+
+
+@pytest.fixture()
+def custom_form_settings(tmp_path: Path) -> Settings:
+    """A Flow Designer trigger whose form defines OpsAgent's own property names; no device filter."""
+    return Settings(
+        _env_file=None,
+        OPSAGENT_OUTBOX_DIR=str(tmp_path),
+        XMATTERS_TRIGGER_URL=FLOW_TRIGGER,
         XMATTERS_USER="opsagent-key-id",
         XMATTERS_PASSWORD="not-a-real-secret",
         XMATTERS_RECIPIENTS="Platform On-call, dominic.ops",
     )
 
 
-@pytest.fixture()
-def trigger_only_settings(tmp_path: Path) -> Settings:
-    return Settings(_env_file=None, OPSAGENT_OUTBOX_DIR=str(tmp_path), XMATTERS_TRIGGER_URL=TRIGGER)
-
-
-def _install(monkeypatch: pytest.MonkeyPatch, fake: FakeXMatters) -> None:
-    monkeypatch.setattr(xm.httpx, "Client", fake.client_factory())
-
-
-def _kb(pkg) -> KBRecord:
-    return KBRecord(incident_id=pkg.incident_id, event_id=pkg.event_id, event_type="ec2.oom_kill", severity="critical",
-                    digest="orders-api OOM-killed", root_cause_summary="unbounded in-process order cache",
-                    verdict="shared", created_at=datetime.now(timezone.utc))
-
-
-# ------------------------------------------------------------------------------------------------ settings
-def test_settings_derive_base_url_and_enablement(xm_settings: Settings, trigger_only_settings: Settings, tmp_path: Path) -> None:
-    assert xm_settings.xmatters_enabled and xm_settings.xmatters_api_enabled
-    assert xm_settings.xmatters_base_url == "https://acme.xmatters.com"
-    assert trigger_only_settings.xmatters_enabled and not trigger_only_settings.xmatters_api_enabled
-    off = Settings(_env_file=None, OPSAGENT_OUTBOX_DIR=str(tmp_path))
-    assert not off.xmatters_enabled and off.xmatters_base_url == ""
-    bogus = Settings(_env_file=None, OPSAGENT_OUTBOX_DIR=str(tmp_path), XMATTERS_TRIGGER_URL="acme.xmatters.com/x")
-    assert not bogus.xmatters_enabled
-
-
-def test_not_configured_receipts(stage1_pkg, tmp_path: Path) -> None:  # noqa: F811
-    s = Settings(_env_file=None, OPSAGENT_OUTBOX_DIR=str(tmp_path))
-    r = xm.send_stage(stage1_pkg, "body", settings=s)
-    assert r.channel == "xmatters" and r.ok is False and r.detail.startswith("not configured: set XMATTERS_TRIGGER_URL")
-    r = xm.send_note("inc-x", "text", "closure", settings=s)
-    assert r.ok is False and r.stage == "closure"
-
-
-# ------------------------------------------------------------------------------------------------ lifecycle
-def test_stage1_raises_event_then_stage2_annotates_and_close_terminates(monkeypatch, stage1_pkg, stage2_pkg, xm_settings) -> None:  # noqa: F811
+# ------------------------------------------------------------------------------------------------ the call
+def test_headsup_rings_phones_with_a_spoken_message(monkeypatch, stage1_pkg, xm_settings) -> None:  # noqa: F811
     fake = FakeXMatters()
     _install(monkeypatch, fake)
+    r = xm.send_headsup(stage1_pkg, settings=xm_settings, ticket="INC0010004")
+    assert r.ok, r.detail
+    assert r.channel == "xmatters" and r.stage == "stage1"
+    assert r.detail == "heads-up event 94000001 raised (priority HIGH) for L1 Support on Mobile Phone, Work Phone"
+    assert r.target == "https://acme.xmatters.com/api/xm/1/events/evt-uuid-1"
 
-    r1 = xm.send_stage(stage1_pkg, "stage one body", settings=xm_settings)
-    assert r1.ok and r1.stage == "stage1" and r1.channel == "xmatters"
-    assert r1.detail == "event requested (requestId req-1, priority HIGH)"
-    assert r1.target == "https://acme.xmatters.com/..."  # never the apiKey
-    assert "SECRET-KEY-123" not in (r1.detail + r1.target)
-    payload = fake.events["evt-uuid-1"]["payload"]
-    assert payload["priority"] == "HIGH"
-    assert payload["recipients"] == [{"id": "Platform On-call"}, {"id": "dominic.ops"}]  # id, not targetName: see _recipients
-    props = payload["properties"]
-    assert props["incident_id"] == stage1_pkg.incident_id and props["stage"] == "stage1" and props["severity"] == "critical"
-    assert props["summary"].startswith("[CRITICAL] orders-api on ") and props["details"].endswith("stage one body")
-    assert fake.calls[0]["init"]["auth"] == ("opsagent-key-id", "not-a-real-secret")
-    state = json.loads((Path(xm_settings.outbox_path) / stage1_pkg.incident_id / "xmatters.json").read_text(encoding="utf-8"))
-    assert state["request_id"] == "req-1" and state["event_id"] is None
+    assert fake.posts[0]["url"] == FORM_TRIGGER
+    payload = fake.posts[0]["json"]
+    assert payload["priority"] == "HIGH"  # critical -> HIGH from the severity policy
+    assert payload["recipients"] == [{"id": "L1 Support"}]  # id, not targetName: the form trigger drops targetName
+    assert payload["targetDeviceNames"] == ["Mobile Phone", "Work Phone"]
+    assert payload["voicemailOptions"] == {"retry": 0, "every": 60, "leave": "messageonly"}
+    assert set(payload["properties"]) == {"Summary", "Message"}  # nothing the Send Alert form does not define
+    assert payload["properties"]["Summary"] == f"{stage1_pkg.brand} OpsAgent heads-up: critical incident on orders-api"
+    spoken = payload["properties"]["Message"]
+    assert spoken.startswith(f"{stage1_pkg.brand} OpsAgent heads-up. A critical incident is open on orders-api. ")
+    assert "ServiceNow ticket INC0010004 has the stage one report." in spoken
+    assert spoken.endswith("The diagnosis follows there in a minute or two.")
+    for forbidden in ("\n", "#", "*", "http", stage1_pkg.incident_id):
+        assert forbidden not in spoken, forbidden
 
-    r2 = xm.send_stage(stage2_pkg, "ORDER_CACHE grows without bound", settings=xm_settings)
-    assert r2.ok and r2.stage == "stage2"
-    assert r2.detail == "annotated event 5001: diagnosis added"
-    assert r2.target == "https://acme.xmatters.com/api/xm/1/events/evt-uuid-1"
-    notes = fake.events["evt-uuid-1"]["annotations"]
-    assert len(notes) == 1 and notes[0].startswith("Stage 2 of 2") and len(notes[0]) <= 1000
-    # the annotation is a digest built from the package, not the card: root cause, code verdict and fixes
-    assert stage2_pkg.diagnosis.root_cause.summary[:60] in notes[0]
-    assert "Code verdict: shared" in notes[0] and "Immediate fix:" in notes[0]
-    assert len(fake.events) == 1, "stage 2 must not raise a second event when it can annotate"
     state = xm.load_state(stage1_pkg.incident_id, xm_settings)
-    assert state["event_id"] == "evt-uuid-1" and state["event_number"] == "5001"
-
-    late = xm.send_note(stage1_pkg.incident_id, "still running", "delay", settings=xm_settings)
-    assert late.ok and late.detail == "annotated event 5001: delay note added"
-
-    done = xm.send_note(stage1_pkg.incident_id, "closed: root cause ...", "closure", settings=xm_settings, terminate=True)
-    assert done.ok and done.detail == "annotated and terminated event 5001"
-    assert fake.events["evt-uuid-1"]["status"] == "TERMINATED"
-    assert fake.events["evt-uuid-1"]["annotations"][-1] == "closed: root cause ..."
-    methods = [c.get("method") for c in fake.calls if "method" in c]
-    assert methods == ["POST", "GET", "POST", "POST", "POST", "POST"]  # trigger; lookup+annotate; annotate; annotate+terminate
+    assert state["event_id"] == "evt-uuid-1" and state["event_number"] == "94000001" and state["request_id"] == "req-1"
+    assert state["devices"] == ["Mobile Phone", "Work Phone"] and state["ticket"] == "INC0010004"
 
 
-def test_without_api_credentials_later_stages_raise_follow_up_events(monkeypatch, stage1_pkg, stage2_pkg, trigger_only_settings) -> None:  # noqa: F811
+def test_headsup_without_a_ticket_and_with_a_custom_form(monkeypatch, stage1_pkg, custom_form_settings) -> None:  # noqa: F811
+    fake = FakeXMatters(flow_designer=True)
+    _install(monkeypatch, fake)
+    r = xm.send_headsup(stage1_pkg, settings=custom_form_settings)
+    assert r.ok and r.detail == "heads-up event requestId req-1 raised (priority HIGH) for Platform On-call, dominic.ops on every device"
+    assert r.target == "https://acme.xmatters.com/..."  # the apiKey in the trigger URL never reaches a receipt
+    payload = fake.posts[0]["json"]
+    assert "targetDeviceNames" not in payload
+    props = payload["properties"]
+    assert set(props) == {"incident_id", "event_id", "severity", "service", "instance_id", "ticket", "summary", "details", "brand", "trace_url"}
+    assert props["ticket"] == "" and props["incident_id"] == stage1_pkg.incident_id
+    assert "The stage one report is on its way." in props["details"] and "ServiceNow" not in props["details"]
+    state = xm.load_state(stage1_pkg.incident_id, custom_form_settings)
+    assert state["event_id"] is None and state["request_id"] == "req-1"
+
+
+def test_headsup_is_placed_once_per_incident(monkeypatch, stage1_pkg, xm_settings) -> None:  # noqa: F811
     fake = FakeXMatters()
     _install(monkeypatch, fake)
-    s = trigger_only_settings
-
-    assert xm.send_stage(stage1_pkg, "one", settings=s).ok
-    assert fake.calls[0]["init"]["auth"] is None
-
-    r2 = xm.send_stage(stage2_pkg, "two", settings=s)
-    assert r2.ok and r2.detail.startswith("follow-up event requested (requestId req-2")
-    assert len(fake.events) == 2 and fake.events["evt-uuid-2"]["payload"]["properties"]["stage"] == "stage2"
-    assert "Stage 2 of 2" in fake.events["evt-uuid-2"]["payload"]["properties"]["details"]
-    assert not any(c.get("method") == "GET" for c in fake.calls), "no xM API calls without credentials"
-
-    late = xm.send_note(stage1_pkg.incident_id, "late", "delay", severity="critical", settings=s)
-    assert late.ok and late.detail.startswith("follow-up event requested") and len(fake.events) == 3
-
-    done = xm.send_note(stage1_pkg.incident_id, "closed", "closure", settings=s, terminate=True)
-    assert done.ok is False and "credentials are not set" in done.detail
-    assert len(fake.events) == 3, "a closure never pages anyone"
-    state = xm.load_state(stage1_pkg.incident_id, s)
-    assert state["request_id"] == "req-1" and [r["stage"] for r in state["requests"]] == ["stage1", "stage2", "delay"]
+    assert xm.send_headsup(stage1_pkg, settings=xm_settings).ok
+    again = xm.send_headsup(stage1_pkg, settings=xm_settings)
+    assert again.ok and again.detail.startswith(f"heads-up already placed for {stage1_pkg.incident_id} (event 94000001)")
+    assert len(fake.posts) == 1  # no second call to on-call
 
 
-def test_event_not_yet_visible_falls_back_then_recovers(monkeypatch, stage1_pkg, stage2_pkg, xm_settings) -> None:  # noqa: F811
-    fake = FakeXMatters(visible_after=1)  # the first lookup finds nothing (xMatters processes triggers asynchronously)
-    _install(monkeypatch, fake)
-    assert xm.send_stage(stage1_pkg, "one", settings=xm_settings).ok
-    r2 = xm.send_stage(stage2_pkg, "two", settings=xm_settings)
-    assert r2.ok and r2.detail.startswith("follow-up event requested")
-    done = xm.send_note(stage1_pkg.incident_id, "closed", "closure", settings=xm_settings, terminate=True)
-    assert done.ok and done.detail == "annotated and terminated event 5001"
+def test_spoken_message_ends_sentences_and_stays_plain(stage1_pkg) -> None:  # noqa: F811
+    text = xm.spoken_message(stage1_pkg, ticket="INC0000001")
+    sentences = [s for s in text.split(". ") if s]
+    assert len(sentences) >= 4 and text.endswith(".")
+    assert xm._sentence("already done.") == "Already done." and xm._sentence("  two   words ") == "Two words."
+    assert xm._sentence("") == ""
 
 
-def test_annotations_never_exceed_the_xmatters_limit(monkeypatch, stage1_pkg, xm_settings) -> None:  # noqa: F811
-    fake = FakeXMatters()
-    _install(monkeypatch, fake)
-    assert xm.send_stage(stage1_pkg, "one", settings=xm_settings).ok
-    long_text = "\n".join(f"line {i}: " + "x" * 60 for i in range(80))  # ~5 KB closure text
-    done = xm.send_note(stage1_pkg.incident_id, long_text, "closure", settings=xm_settings, terminate=True)
-    assert done.ok, done.detail
-    comment = fake.events["evt-uuid-1"]["annotations"][-1]
-    assert len(comment) <= 1000 and comment.endswith("...") and comment.startswith("line 0:")
-    assert xm.clamp("short") == "short"
+def test_spoken_message_falls_back_to_the_summary_for_a_label_headline(stage1_pkg) -> None:  # noqa: F811
+    # the live triage sometimes produces "orders-api on i-...: process oom kill"; say the analyst's first sentence instead
+    label = stage1_pkg.model_copy(update={
+        "headline": f"orders-api on {stage1_pkg.instance_id}: process oom kill",
+        "summary": "The orders-api service experienced an out-of-memory condition where the kernel killed the python3 process "
+                   "after rapid memory growth, and the service has restarted twice. Further analysis follows. " + "x" * 400,
+    })
+    assert label.short_headline == "process oom kill"
+    text = xm.spoken_message(label)
+    assert "process oom kill" not in text
+    assert "The orders-api service experienced an out-of-memory condition" in text
+    assert "restarted twice. The stage one report is on its way." in text
+    assert "xxxx" not in text
+    # a long first sentence is cut at a word boundary
+    long_first = label.model_copy(update={"summary": "word " * 120 + ". tail"})
+    what = xm._what_happened(long_first)
+    assert len(what) <= xm.MAX_WHAT_CHARS + 1 and what.endswith("word.")
+    # an informative headline is spoken as it is
+    assert xm._what_happened(stage1_pkg) == xm._sentence(stage1_pkg.short_headline)
 
 
-def test_note_without_a_stage1_event(xm_settings) -> None:
-    r = xm.send_note("inc-never-raised", "text", "closure", settings=xm_settings)
-    assert r.ok is False and "no xMatters event was raised" in r.detail
-
-
-def test_http_failures_become_receipts(monkeypatch, stage1_pkg, xm_settings) -> None:  # noqa: F811
-    _install(monkeypatch, FakeXMatters(fail_status=401))
-    r = xm.send_stage(stage1_pkg, "body", settings=xm_settings)
-    assert r.ok is False and "HTTP 401" in r.detail and "SECRET-KEY-123" not in r.detail
-
-    class _Boom:
-        def __init__(self, *a, **k):
-            raise httpx.ConnectError("no route to xmatters")
-
-    monkeypatch.setattr(xm.httpx, "Client", _Boom)
-    r = xm.send_stage(stage1_pkg, "body", settings=xm_settings)
-    assert r.ok is False and "ConnectError" in r.detail
-
-    class _NoRequestId(FakeXMatters().client_factory()):
-        def post(self, url, json=None, params=None, **k):
-            return _Resp(200, {"status": "accepted"})
-
-    monkeypatch.setattr(xm.httpx, "Client", _NoRequestId)
-    r = xm.send_stage(stage1_pkg, "body", settings=xm_settings)
-    assert r.ok is False and "no requestId" in r.detail
-
-
-# ------------------------------------------------------------------------------------------------ policy + fan-out
-def test_priority_comes_from_the_severity_policy(monkeypatch, stage1_pkg, xm_settings) -> None:  # noqa: F811
-    from opsagent.parsing import severity_policy as sp
-
-    fake = FakeXMatters()
-    _install(monkeypatch, fake)
-    custom = sp.SeverityPolicy.model_validate({"rules": [{"severity": "critical", "when": "oom_event"}],
-                                               "xmatters": {"critical": "MEDIUM"}})
-    assert custom.event_priority("critical") == "MEDIUM" and custom.event_priority("warning") == "MEDIUM" and custom.event_priority("info") == "LOW"
-    monkeypatch.setattr(sp, "get_policy", lambda: custom)
-    r = xm.send_stage(stage1_pkg, "body", settings=xm_settings)
-    assert r.ok and "priority MEDIUM" in r.detail and fake.events["evt-uuid-1"]["payload"]["priority"] == "MEDIUM"
-
-    with pytest.raises(Exception):
-        sp.SeverityPolicy.model_validate({"rules": [{"severity": "critical", "when": "oom_event"}], "xmatters": {"critical": "URGENT"}})
-
-
-def test_deliver_fan_out_includes_xmatters(monkeypatch, stage1_pkg, stage2_pkg, xm_settings) -> None:  # noqa: F811
-    fake = FakeXMatters()
-    _install(monkeypatch, fake)
-    r1 = {r.channel: r for r in deliver(stage1_pkg, settings=xm_settings)}
-    assert set(r1) == {"outbox", "teams", "email", "servicenow", "xmatters"}
-    assert r1["xmatters"].ok and r1["xmatters"].detail.startswith("event requested")
-    assert "orders-api" in fake.events["evt-uuid-1"]["payload"]["properties"]["details"]  # the stage 1 card as text
-
-    r2 = {r.channel: r for r in deliver(stage2_pkg, settings=xm_settings)}
-    assert r2["xmatters"].ok and r2["xmatters"].detail.startswith("annotated event")
-
-    late = {r.channel: r for r in deliver_delay_notice(stage1_pkg.incident_id, "orders-api", "critical", 310.0, settings=xm_settings)}
-    assert late["xmatters"].ok and late["xmatters"].stage == "delay"
-
-    closure = {r.channel: r for r in deliver_closure(stage1_pkg.incident_id, _kb(stage1_pkg), settings=xm_settings)}
-    assert set(closure) == {"servicenow", "xmatters"}
-    assert closure["xmatters"].ok and closure["xmatters"].detail == "annotated and terminated event 5001"
-    assert closure["servicenow"].ok is False  # not configured in this fixture
-    assert fake.events["evt-uuid-1"]["status"] == "TERMINATED"
-    assert "unbounded in-process order cache" in fake.events["evt-uuid-1"]["annotations"][-1]
-
-
-def test_property_map_for_the_stock_send_alert_form(monkeypatch, stage1_pkg, stage2_pkg, tmp_path: Path) -> None:  # noqa: F811
-    form_trigger = "https://acme.xmatters.com/api/xm/1/forms/133b771f-03a6-4df0-b57c-f491364268ba/triggers"
-    s = Settings(_env_file=None, OPSAGENT_OUTBOX_DIR=str(tmp_path), XMATTERS_TRIGGER_URL=form_trigger,
-                 XMATTERS_USER="u", XMATTERS_PASSWORD="p", XMATTERS_RECIPIENTS="L1 Support",
-                 XMATTERS_PROPERTIES="summary=Summary, details=Message")
-    assert s.xmatters_property_map == {"summary": "Summary", "details": "Message"}
-    fake = FakeXMatters()
-    _install(monkeypatch, fake)
-
-    r1 = xm.send_stage(stage1_pkg, "stage one card", settings=s)
-    assert r1.ok, r1.detail
-    payload = fake.events["evt-uuid-1"]["payload"]
-    assert set(payload["properties"]) == {"Summary", "Message"}  # nothing the form does not define
-    assert payload["properties"]["Summary"].startswith("[CRITICAL] orders-api on ")
-    assert payload["properties"]["Message"].startswith(f"OpsAgent incident {stage1_pkg.incident_id} (stage1)")
-    assert "stage one card" in payload["properties"]["Message"]
-    assert payload["recipients"] == [{"id": "L1 Support"}]
-    assert fake.calls[1]["url"] == form_trigger
-
-    # a follow-up event (no event visible yet) is mapped the same way
-    fake.visible = False
-    r2 = xm.send_stage(stage2_pkg, "diagnosis", settings=s)
-    assert r2.ok and r2.detail.startswith("follow-up event requested")
-    assert set(fake.events["evt-uuid-2"]["payload"]["properties"]) == {"Summary", "Message"}
-
-    # a map that names none of the payload keys is a configuration error, reported, never a half-empty page
-    broken = s.model_copy(update={"xmatters_properties": "subject=Summary"})
-    r = xm.send_stage(stage1_pkg, "body", settings=broken)
+def test_property_map_matching_nothing_is_a_configuration_error(monkeypatch, stage1_pkg, xm_settings) -> None:  # noqa: F811
+    _install(monkeypatch, FakeXMatters())
+    broken = xm_settings.model_copy(update={"xmatters_properties": "subject=Summary"})
+    r = xm.send_headsup(stage1_pkg, settings=broken)
     assert r.ok is False and "maps none of the payload keys" in r.detail
 
 
-def test_closure_keeps_the_event_open_when_asked(monkeypatch, stage1_pkg, tmp_path: Path) -> None:  # noqa: F811
-    s = Settings(_env_file=None, OPSAGENT_OUTBOX_DIR=str(tmp_path), XMATTERS_TRIGGER_URL=TRIGGER,
-                 XMATTERS_USER="u", XMATTERS_PASSWORD="p", XMATTERS_TERMINATE_ON_CLOSE="0")
+def test_trigger_failures_are_receipts(monkeypatch, stage1_pkg, xm_settings) -> None:  # noqa: F811
+    _install(monkeypatch, FakeXMatters(fail_status=401))
+    r = xm.send_headsup(stage1_pkg, settings=xm_settings)
+    assert r.ok is False and r.detail.startswith("XMattersError: HTTP 401")
+    assert xm.load_state(stage1_pkg.incident_id, xm_settings) == {}  # nothing to terminate later
+
+
+# ------------------------------------------------------------------------------------------------ the close
+def test_close_terminates_the_event(monkeypatch, stage1_pkg, xm_settings) -> None:  # noqa: F811
     fake = FakeXMatters()
     _install(monkeypatch, fake)
-    assert xm.send_stage(stage1_pkg, "one", settings=s).ok
-    closure = {r.channel: r for r in deliver_closure(stage1_pkg.incident_id, _kb(stage1_pkg), settings=s)}
-    assert closure["xmatters"].ok and closure["xmatters"].detail == "annotated event 5001: closure note added"
+    assert xm.send_headsup(stage1_pkg, settings=xm_settings).ok
+    r = xm.close_event(stage1_pkg.incident_id, settings=xm_settings)
+    assert r.ok and r.stage == "closure"
+    assert r.detail == "terminated heads-up event 94000001: call retries and escalation stopped"
+    assert fake.events["evt-uuid-1"]["status"] == "TERMINATED"
+    assert fake.posts[-1]["json"] == {"id": "evt-uuid-1", "status": "TERMINATED"}
+    assert xm.load_state(stage1_pkg.incident_id, xm_settings)["terminated_at"]
+
+
+def test_close_resolves_a_flow_designer_event_by_request_id(monkeypatch, stage1_pkg, custom_form_settings) -> None:  # noqa: F811
+    fake = FakeXMatters(flow_designer=True, visible_after=1)
+    _install(monkeypatch, fake)
+    assert xm.send_headsup(stage1_pkg, settings=custom_form_settings).ok
+    early = xm.close_event(stage1_pkg.incident_id, settings=custom_form_settings)
+    assert early.ok is False and "not visible yet (requestId req-1)" in early.detail
+    late = xm.close_event(stage1_pkg.incident_id, settings=custom_form_settings)
+    assert late.ok and "terminated heads-up event 94000001" in late.detail
+    assert fake.events["evt-uuid-1"]["status"] == "TERMINATED"
+    assert xm.load_state(stage1_pkg.incident_id, custom_form_settings)["event_id"] == "evt-uuid-1"
+
+
+def test_close_without_credentials_or_without_a_call(monkeypatch, stage1_pkg, tmp_path: Path) -> None:  # noqa: F811
+    fake = FakeXMatters(flow_designer=True)
+    _install(monkeypatch, fake)
+    trigger_only = Settings(_env_file=None, OPSAGENT_OUTBOX_DIR=str(tmp_path), XMATTERS_TRIGGER_URL=FLOW_TRIGGER)
+    assert trigger_only.xmatters_enabled and not trigger_only.xmatters_api_enabled
+    nothing = xm.close_event(stage1_pkg.incident_id, settings=trigger_only)
+    assert nothing.ok is False and nothing.detail == f"no xMatters heads-up was placed for {stage1_pkg.incident_id}"
+    assert xm.send_headsup(stage1_pkg, settings=trigger_only).ok  # a Flow Designer trigger pages without xM API credentials
+    r = xm.close_event(stage1_pkg.incident_id, settings=trigger_only)
+    assert r.ok is False and "XMATTERS_USER / XMATTERS_PASSWORD not set" in r.detail
     assert fake.events["evt-uuid-1"]["status"] == "ACTIVE"
+
+
+def test_not_configured(stage1_pkg, tmp_path: Path) -> None:  # noqa: F811
+    s = Settings(_env_file=None, OPSAGENT_OUTBOX_DIR=str(tmp_path))
+    assert not s.xmatters_enabled
+    assert xm.send_headsup(stage1_pkg, settings=s).detail == xm.NOT_CONFIGURED
+    assert xm.close_event(stage1_pkg.incident_id, settings=s).detail == xm.NOT_CONFIGURED
+
+
+# ------------------------------------------------------------------------------------------------ in the fan-out
+def test_deliver_calls_at_stage1_only_and_hangs_up_on_close(monkeypatch, stage1_pkg, stage2_pkg, xm_settings) -> None:  # noqa: F811
+    fake = FakeXMatters()
+    _install(monkeypatch, fake)
+
+    r1 = {r.channel: r for r in deliver(stage1_pkg, settings=xm_settings)}
+    assert set(r1) == {"outbox", "teams", "email", "servicenow", "xmatters"}
+    assert r1["xmatters"].ok and r1["xmatters"].detail.startswith("heads-up event 94000001 raised")
+    spoken = fake.posts[0]["json"]["properties"]["Message"]
+    assert "The stage one report is on its way." in spoken  # ServiceNow is not configured here, so no ticket number
+
+    r2 = {r.channel: r for r in deliver(stage2_pkg, settings=xm_settings)}
+    assert set(r2) == {"outbox", "teams", "email", "servicenow"}  # the diagnosis does not go to xMatters
+    late = {r.channel for r in deliver_delay_notice(stage1_pkg.incident_id, "orders-api", "critical", 310.0, settings=xm_settings)}
+    assert late == {"outbox", "teams", "email", "servicenow"}
+    assert len(fake.posts) == 1  # still the single call
+
+    closure = deliver_closure(stage1_pkg.incident_id, _kb(stage1_pkg), settings=xm_settings)
+    assert [c.channel for c in closure] == ["servicenow", "xmatters"]
+    assert closure[1].ok and closure[1].detail.startswith("terminated heads-up event 94000001")
+    assert fake.events["evt-uuid-1"]["status"] == "TERMINATED"
+
+
+def test_closure_keeps_the_event_open_when_asked(monkeypatch, stage1_pkg, xm_settings) -> None:  # noqa: F811
+    fake = FakeXMatters()
+    _install(monkeypatch, fake)
+    keep = xm_settings.model_copy(update={"xmatters_terminate_on_close": False})
+    assert deliver(stage1_pkg, settings=keep)[-1].ok
+    closure = deliver_closure(stage1_pkg.incident_id, _kb(stage1_pkg), settings=keep)
+    assert closure[1].ok and closure[1].detail.startswith("heads-up event left open (XMATTERS_TERMINATE_ON_CLOSE=0)")
+    assert fake.events["evt-uuid-1"]["status"] == "ACTIVE"
+    assert len(fake.posts) == 1
+
+
+def test_settings_parse_devices_and_properties(tmp_path: Path) -> None:
+    s = Settings(_env_file=None, OPSAGENT_OUTBOX_DIR=str(tmp_path), XMATTERS_TRIGGER_URL=FORM_TRIGGER,
+                 XMATTERS_DEVICES=" Mobile Phone ,Work Phone,, ", XMATTERS_PROPERTIES="summary=Summary, details=Message")
+    assert s.xmatters_device_names == ["Mobile Phone", "Work Phone"]
+    assert s.xmatters_property_map == {"summary": "Summary", "details": "Message"}
+    assert s.xmatters_base_url == "https://acme.xmatters.com"
+    assert Settings(_env_file=None, OPSAGENT_OUTBOX_DIR=str(tmp_path)).xmatters_device_names == []

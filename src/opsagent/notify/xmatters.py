@@ -1,20 +1,21 @@
-"""xMatters on-call paging through a workflow trigger URL and the xMatters REST API (xM API).
+"""xMatters: a heads-up call to on-call, nothing more.
 
-Stage 1 POSTs the trigger URL (a Flow Designer HTTP trigger, or the inbound integration URL of a Create Event form).
-That raises an xMatters event and pages the recipients. xMatters answers with a requestId; the sender keeps it in the
-incident's outbox folder (xmatters.json) and later resolves it to the event id with GET /api/xm/1/events?requestId=.
-Stage 2, the delay notice and the closure add annotations (comments) to that event, and the closure can terminate it
-so the page stops. Without xM API credentials only the trigger URL is usable: stage 2 and the delay notice then raise
-a follow-up event that carries the same incident id and a `stage` property; the closure reports that it could not
-annotate. Never raises: every outcome is a DeliveryReceipt.
+One event per incident, raised at stage 1 through a trigger URL: the stock Send Alert form of the instance
+(/api/xm/1/forms/<form id>/triggers, basic auth) or a Flow Designer trigger. xMatters rings the recipients' phones with
+a short spoken message (XMATTERS_DEVICES picks the devices: voice "Mobile Phone" / "Work Phone" on a paid plan, the
+mobile app's push "Android Phone" / "iPhone" on the free plan, which has no voice or SMS devices) and runs its own
+escalation (L1 Support first, L2 Support after five minutes, for example). Everything else, the stage 2 diagnosis, the
+delay notice and the closure text, goes to the ticket, email, Teams and the outbox, not to xMatters. When the flow
+closes it terminates the event (XMATTERS_TERMINATE_ON_CLOSE=1, the default) so an unanswered call stops retrying and
+the escalation does not fire for an incident the agent has already handled. Never raises: every outcome is a
+DeliveryReceipt.
 
-Payload shape (Create Event form convention, also easy to map in an HTTP trigger):
-    {"properties": {incident_id, event_id, stage, severity, service, instance_id, summary, details, brand, trace_url},
-     "priority": "HIGH" | "MEDIUM" | "LOW",            # from the severity policy (xmatters block)
-     "recipients": [{"id": "Platform On-call"}]}         # XMATTERS_RECIPIENTS (names or uuids), optional
-
-A form whose layout uses other property names takes XMATTERS_PROPERTIES ("summary=Summary,details=Message" for the
-stock Send Alert form, triggered at /api/xm/1/forms/<form id>/triggers): only the mapped keys are sent, renamed.
+Payload (the Send Alert form takes XMATTERS_PROPERTIES=summary=Summary,details=Message: only those two, renamed):
+    {"properties": {incident_id, event_id, severity, service, instance_id, ticket, summary, details, brand, trace_url},
+     "priority": "HIGH" | "MEDIUM" | "LOW",                 # severity policy, xmatters block
+     "recipients": [{"id": "L1 Support"}],                   # XMATTERS_RECIPIENTS: names or uuids, in the id field
+     "targetDeviceNames": ["Mobile Phone", "Work Phone"],    # XMATTERS_DEVICES; absent = every device, email included
+     "voicemailOptions": {"retry": 0, "every": 60, "leave": "messageonly"}}  # unanswered: leave the heads-up
 """
 from __future__ import annotations
 
@@ -29,11 +30,11 @@ from opsagent.config import Settings, get_settings
 from opsagent.notify.outbox import incident_dir
 from opsagent.schemas.incident import DeliveryReceipt, IncidentPackage
 
-NOT_CONFIGURED = "not configured: set XMATTERS_TRIGGER_URL (and XMATTERS_USER/XMATTERS_PASSWORD for annotations and termination)"
+NOT_CONFIGURED = "not configured: set XMATTERS_TRIGGER_URL, XMATTERS_USER and XMATTERS_PASSWORD"
 STATE_FILE = "xmatters.json"
 _API = "/api/xm/1"
-MAX_DETAILS_CHARS = 4000
-MAX_COMMENT_CHARS = 1000  # xMatters rejects longer annotation comments (HTTP 400)
+MAX_MESSAGE_CHARS = 2000
+VOICEMAIL = {"retry": 0, "every": 60, "leave": "messageonly"}
 
 
 def _now() -> datetime:
@@ -50,7 +51,7 @@ class XMattersError(RuntimeError):
 
 # ------------------------------------------------------------------------------------------------ client
 class XMattersClient:
-    """Trigger URL for raising events; xM API (basic auth: a REST user or an API key id and secret) for the rest."""
+    """Trigger URL for raising the event; xM API (basic auth: a REST user or an API key id and secret) to end it."""
 
     def __init__(self, settings: Settings | None = None, timeout: float = 20.0):
         s = settings or get_settings()
@@ -74,24 +75,20 @@ class XMattersClient:
         except Exception as exc:  # noqa: BLE001
             raise XMattersError(f"HTTP {resp.status_code}: non-JSON body") from exc
 
-    def trigger(self, payload: dict) -> str:
-        """POST the trigger URL; returns the requestId xMatters assigns to the inbound request."""
+    def trigger(self, payload: dict) -> dict:
+        """POST the trigger URL. A form trigger answers with the event itself (id, eventId, requestId); a Flow Designer
+        trigger answers with a requestId only, resolved to the event later through GET /events?requestId=."""
         with self._client() as client:
             data = self._json(client.post(self.trigger_url, json=payload))
-        request_id = data.get("requestId") if isinstance(data, dict) else None
-        if not request_id:
-            raise XMattersError(f"trigger accepted but no requestId in response: {str(data)[:200]}")
-        return str(request_id)
+        if not isinstance(data, dict) or not (data.get("id") or data.get("requestId")):
+            raise XMattersError(f"trigger accepted but returned neither an event id nor a requestId: {str(data)[:200]}")
+        return data
 
     def find_event(self, request_id: str) -> dict | None:
         with self._client() as client:
             data = self._json(client.get(f"{self.base}{_API}/events", params={"requestId": request_id}))
         items = data.get("data") if isinstance(data, dict) else None
         return items[0] if isinstance(items, list) and items else None
-
-    def annotate(self, event_id: str, comment: str) -> dict:
-        with self._client() as client:
-            return self._json(client.post(f"{self.base}{_API}/events/{event_id}/annotations", json={"comment": clamp(comment)}))
 
     def terminate(self, event_id: str) -> dict:
         with self._client() as client:
@@ -132,7 +129,7 @@ def save_state(incident_id: str, state: dict, settings: Settings | None = None) 
     return p
 
 
-# ------------------------------------------------------------------------------------------------ payloads
+# ------------------------------------------------------------------------------------------------ payload
 def map_properties(props: dict[str, Any], settings: Settings) -> dict[str, Any]:
     """Rename / restrict the payload properties to what the target form's layout defines (XMATTERS_PROPERTIES)."""
     mapping = settings.xmatters_property_map
@@ -150,85 +147,73 @@ def _recipients(settings: Settings) -> list[dict]:
     return [{"id": n} for n in names]
 
 
-def event_payload(pkg: IncidentPackage, body: str, settings: Settings, priority: str) -> dict:
+MIN_HEADLINE_CHARS = 30  # below this the headline is a label ("process oom kill"), not a sentence worth saying
+MAX_WHAT_CHARS = 260
+
+
+def _sentence(text: str) -> str:
+    text = " ".join(text.split())
+    if not text:
+        return ""
+    text = text[0].upper() + text[1:]
+    return text if text[-1] in ".!?" else text + "."
+
+
+def _what_happened(pkg: IncidentPackage) -> str:
+    """One sentence on what happened: the headline when it says something, else the first sentence of the triage
+    summary (the analyst's one-paragraph account), cut at a word when it runs long."""
+    headline = pkg.short_headline.strip()
+    if len(headline) >= MIN_HEADLINE_CHARS or not pkg.summary.strip():
+        return _sentence(headline)
+    first = " ".join(pkg.summary.split())
+    for stop in (". ", "; "):
+        if stop in first:
+            first = first.split(stop, 1)[0]
+            break
+    if len(first) > MAX_WHAT_CHARS:
+        first = first[:MAX_WHAT_CHARS].rsplit(" ", 1)[0]
+    return _sentence(first)
+
+
+def spoken_message(pkg: IncidentPackage, ticket: str | None = None) -> str:
+    """Short plain sentences: xMatters reads the message aloud on a phone and shows it as text on other devices.
+    No markdown, no links, no incident id (a 17-character token read digit by digit); the ticket number instead."""
+    sev = (pkg.severity or "info").lower()
+    lines = [
+        f"{pkg.brand} OpsAgent heads-up.",
+        f"A {sev} incident is open on {pkg.service_name}.",
+        _what_happened(pkg),
+    ]
+    if ticket:
+        lines.append(f"ServiceNow ticket {ticket} has the stage one report.")
+    else:
+        lines.append("The stage one report is on its way.")
+    lines.append("The diagnosis follows there in a minute or two.")
+    return " ".join(lines)[:MAX_MESSAGE_CHARS]
+
+
+def headsup_payload(pkg: IncidentPackage, settings: Settings, priority: str, ticket: str | None = None) -> dict:
     sev = (pkg.severity or "info").lower()
     props: dict[str, Any] = {
         "incident_id": pkg.incident_id,
         "event_id": pkg.event_id,
-        "stage": pkg.stage,
         "severity": sev,
         "service": pkg.service_name,
         "instance_id": pkg.instance_id,
-        "summary": f"[{sev.upper()}] {pkg.title}",
-        "details": _details(pkg.incident_id, pkg.stage, body, pkg.trace_url),
+        "ticket": ticket or "",
+        "summary": f"{pkg.brand} OpsAgent heads-up: {sev} incident on {pkg.service_name}",
+        "details": spoken_message(pkg, ticket),
         "brand": pkg.brand,
         "trace_url": pkg.trace_url or "",
     }
-    payload: dict[str, Any] = {"properties": map_properties(props, settings), "priority": priority}
+    payload: dict[str, Any] = {"properties": map_properties(props, settings), "priority": priority, "voicemailOptions": dict(VOICEMAIL)}
     recipients = _recipients(settings)
     if recipients:
         payload["recipients"] = recipients
+    devices = settings.xmatters_device_names
+    if devices:
+        payload["targetDeviceNames"] = devices
     return payload
-
-
-def follow_up_payload(incident_id: str, stage: str, severity: str, text: str, settings: Settings, priority: str) -> dict:
-    """A later-stage event for accounts without xM API credentials (no annotations possible)."""
-    label = {"stage2": "diagnosis", "delay": "delay notice", "closure": "closure"}.get(stage, stage)
-    props = {
-        "incident_id": incident_id,
-        "stage": stage,
-        "severity": severity,
-        "summary": f"[{severity.upper()}] {incident_id}: {label}",
-        "details": _details(incident_id, stage, text, None),
-        "brand": settings.brand,
-    }
-    payload: dict[str, Any] = {"properties": map_properties(props, settings), "priority": priority}
-    recipients = _recipients(settings)
-    if recipients:
-        payload["recipients"] = recipients
-    return payload
-
-
-def _details(incident_id: str, stage: str, body: str, trace_url: str | None) -> str:
-    """Message body that stands on its own when the form carries only a summary and a message."""
-    head = f"OpsAgent incident {incident_id} ({stage})"
-    tail = f"\n\nRun recorder: {trace_url}" if trace_url else ""
-    room = MAX_DETAILS_CHARS - len(head) - len(tail) - 2
-    return f"{head}\n\n{body[:max(room, 0)]}{tail}"
-
-
-def clamp(text: str, limit: int = MAX_COMMENT_CHARS) -> str:
-    """Fit a comment into xMatters' annotation limit, cutting at a line break when one is near the end."""
-    text = text.strip()
-    if len(text) <= limit:
-        return text
-    cut = text[: limit - 3]
-    nl = cut.rfind("\n")
-    if nl > limit * 0.6:
-        cut = cut[:nl]
-    return cut.rstrip() + "..."
-
-
-def stage_comment(pkg: IncidentPackage, body: str) -> str:
-    """A digest that fits an annotation: the full card already went to the ticket, email and outbox."""
-    if pkg.stage != "stage2":
-        return clamp(f"Stage 1 of 2: triage for {pkg.incident_id}\n{pkg.headline}\n\n{pkg.summary}")
-    lines = [f"Stage 2 of 2: diagnosis for {pkg.incident_id}", pkg.headline]
-    d, c = pkg.diagnosis, pkg.code_correlation
-    if d is not None:
-        lines.append(f"Root cause ({d.root_cause.category}, {d.root_cause.confidence}): {d.root_cause.summary}")
-    if c is not None:
-        where = f" at {c.locations[0].file}" + (f"::{c.locations[0].symbol}" if c.locations[0].symbol else "") if c.locations else ""
-        lines.append(f"Code verdict: {c.verdict} ({c.confidence:.0%}){where}. {c.developer_action}")
-    if pkg.recommended_fix is not None:
-        lines.append(f"Immediate fix: {pkg.recommended_fix.detail}")
-    if pkg.durable_fix is not None:
-        lines.append(f"Durable fix: {pkg.durable_fix.detail}")
-    if not d and not c:
-        lines.append(body)
-    if pkg.trace_url:
-        lines.append(f"Full report: {pkg.trace_url}")
-    return clamp("\n".join(lines))
 
 
 # ------------------------------------------------------------------------------------------------ helpers
@@ -239,7 +224,7 @@ def _priority_for(severity: str) -> str:
 
 
 def _resolve_event(client: XMattersClient, incident_id: str, state: dict, settings: Settings) -> str | None:
-    """The xMatters event id for this incident: cached in state, else looked up by the stage 1 requestId."""
+    """The xMatters event uuid for this incident: cached in state, else looked up by the trigger's requestId."""
     if state.get("event_id"):
         return str(state["event_id"])
     request_id = state.get("request_id")
@@ -248,7 +233,7 @@ def _resolve_event(client: XMattersClient, incident_id: str, state: dict, settin
     event = client.find_event(str(request_id))
     if not event:
         return None
-    event_id = str(event.get("id") or event.get("eventId") or "")
+    event_id = str(event.get("id") or "")
     if not event_id:
         return None
     state["event_id"] = event_id
@@ -257,64 +242,62 @@ def _resolve_event(client: XMattersClient, incident_id: str, state: dict, settin
     return event_id
 
 
-def _raise_event(client: XMattersClient, incident_id: str, payload: dict, stage: str, settings: Settings, state: dict, kind: str) -> DeliveryReceipt:
-    request_id = client.trigger(payload)
-    record = {"stage": stage, "request_id": request_id, "at": _now().isoformat()}
-    if kind == "event":
-        state.update({"request_id": request_id, "event_id": None, "priority": payload.get("priority"), "raised_at": record["at"]})
-    state.setdefault("requests", []).append(record)
-    save_state(incident_id, state, settings)
-    what = "event requested" if kind == "event" else "follow-up event requested"
-    return _receipt(stage, True, f"{what} (requestId {request_id}, priority {payload.get('priority')})", client.trigger_target())
-
-
 # ------------------------------------------------------------------------------------------------ senders
-def send_stage(pkg: IncidentPackage, body: str, settings: Settings | None = None) -> DeliveryReceipt:
-    """Stage 1 raises the event; stage 2 annotates it (or raises a follow-up event when it cannot)."""
+def send_headsup(pkg: IncidentPackage, settings: Settings | None = None, ticket: str | None = None) -> DeliveryReceipt:
+    """Stage 1: raise the event that rings on-call. One per incident: a repeat for the same incident id is reported,
+    not placed. `ticket` is the ITSM record number to say in the message when the ticket channel created one."""
     s = settings or get_settings()
     if not s.xmatters_enabled:
         return _receipt(pkg.stage, False, NOT_CONFIGURED)
     try:
         client = XMattersClient(s)
         state = load_state(pkg.incident_id, s)
-        priority = _priority_for(pkg.severity)
-        if pkg.stage == "stage1" or not state.get("request_id"):
-            return _raise_event(client, pkg.incident_id, event_payload(pkg, body, s, priority), pkg.stage, s, state, "event")
-        event_id = _resolve_event(client, pkg.incident_id, state, s)
-        if event_id is None:
-            payload = follow_up_payload(pkg.incident_id, pkg.stage, (pkg.severity or "info").lower(), stage_comment(pkg, body), s, priority)
-            return _raise_event(client, pkg.incident_id, payload, pkg.stage, s, state, "follow-up")
-        client.annotate(event_id, stage_comment(pkg, body))
-        return _receipt(pkg.stage, True, f"annotated event {state.get('event_number') or event_id}: diagnosis added", client.event_url(event_id))
+        if state.get("event_id") or state.get("request_id"):
+            number = state.get("event_number") or state.get("request_id")
+            return _receipt(pkg.stage, True, f"heads-up already placed for {pkg.incident_id} (event {number})",
+                            client.event_url(state["event_id"]) if state.get("event_id") else client.trigger_target())
+        payload = headsup_payload(pkg, s, _priority_for(pkg.severity), ticket)
+        data = client.trigger(payload)
+        event_id = str(data.get("id") or "") or None
+        state = {
+            "request_id": data.get("requestId"),
+            "event_id": event_id,
+            "event_number": data.get("eventId"),
+            "priority": payload["priority"],
+            "recipients": [r["id"] for r in payload.get("recipients", [])],
+            "devices": payload.get("targetDeviceNames") or "all",
+            "ticket": ticket,
+            "raised_at": _now().isoformat(),
+        }
+        save_state(pkg.incident_id, state, s)
+        who = ", ".join(state["recipients"]) or "the form's recipients"
+        ring = ", ".join(payload.get("targetDeviceNames") or []) or "every device"
+        number = state["event_number"] or f"requestId {state['request_id']}"
+        return _receipt(pkg.stage, True, f"heads-up event {number} raised (priority {payload['priority']}) for {who} on {ring}",
+                        client.event_url(event_id) if event_id else client.trigger_target())
     except Exception as exc:  # noqa: BLE001 - delivery must never take the flow down
         return _receipt(pkg.stage, False, f"{type(exc).__name__}: {exc}")
 
 
-def send_note(incident_id: str, text: str, stage: str, severity: str = "critical", settings: Settings | None = None, terminate: bool = False) -> DeliveryReceipt:
-    """Delay notice or closure. Annotates the event; the closure terminates it when asked. A delay notice that
-    cannot be annotated becomes a follow-up event; a closure that cannot be annotated is reported, not paged."""
+def close_event(incident_id: str, settings: Settings | None = None) -> DeliveryReceipt:
+    """Closure: terminate the heads-up event so an unanswered call stops retrying and the escalation does not fire."""
     s = settings or get_settings()
     if not s.xmatters_enabled:
-        return _receipt(stage, False, NOT_CONFIGURED)
+        return _receipt("closure", False, NOT_CONFIGURED)
     try:
         client = XMattersClient(s)
         state = load_state(incident_id, s)
-        if not state.get("request_id"):
-            return _receipt(stage, False, f"no xMatters event was raised for {incident_id}")
+        if not (state.get("event_id") or state.get("request_id")):
+            return _receipt("closure", False, f"no xMatters heads-up was placed for {incident_id}")
+        if client.auth is None:
+            return _receipt("closure", False, "cannot terminate the xMatters event: XMATTERS_USER / XMATTERS_PASSWORD not set")
         event_id = _resolve_event(client, incident_id, state, s)
         if event_id is None:
-            if stage == "delay":
-                payload = follow_up_payload(incident_id, stage, severity, text, s, _priority_for(severity))
-                return _raise_event(client, incident_id, payload, stage, s, state, "follow-up")
-            why = "xM API credentials are not set" if client.auth is None else "the event is not visible yet"
-            return _receipt(stage, False, f"could not annotate the xMatters event for {incident_id}: {why}")
-        client.annotate(event_id, text)
+            return _receipt("closure", False, f"the xMatters event for {incident_id} is not visible yet (requestId {state.get('request_id')})")
+        client.terminate(event_id)
+        state["terminated_at"] = _now().isoformat()
+        save_state(incident_id, state, s)
         number = state.get("event_number") or event_id
-        if terminate:
-            client.terminate(event_id)
-            state["terminated_at"] = _now().isoformat()
-            save_state(incident_id, state, s)
-            return _receipt(stage, True, f"annotated and terminated event {number}", client.event_url(event_id))
-        return _receipt(stage, True, f"annotated event {number}: {stage} note added", client.event_url(event_id))
+        return _receipt("closure", True, f"terminated heads-up event {number}: call retries and escalation stopped", client.event_url(event_id))
     except Exception as exc:  # noqa: BLE001
-        return _receipt(stage, False, f"{type(exc).__name__}: {exc}")
+        return _receipt("closure", False, f"{type(exc).__name__}: {exc}")

@@ -552,7 +552,7 @@ def test_deliver_nothing_configured(stage1_pkg: IncidentPackage, unconfigured: S
     not_ok = {r.channel: r for r in receipts if not r.ok}
     assert set(not_ok) == {"teams", "email", "servicenow", "xmatters"}
     assert not_ok["servicenow"].detail.startswith("not configured: set SERVICENOW_INSTANCE")
-    assert not_ok["xmatters"].detail.startswith("not configured: set XMATTERS_TRIGGER_URL")
+    assert not_ok["xmatters"].detail.startswith("not configured: set XMATTERS_TRIGGER_URL, XMATTERS_USER")
     assert not_ok["teams"].detail == "not configured: set TEAMS_WEBHOOK_URL"
     assert not_ok["email"].detail.startswith("not configured: set SMTP_HOST")
     folder = tmp_path / INCIDENT_ID
@@ -576,7 +576,7 @@ def test_deliver_with_teams_calls_webhook_once(monkeypatch: pytest.MonkeyPatch, 
 
 def test_deliver_delay_notice(unconfigured: Settings, tmp_path: Path) -> None:
     receipts = deliver_delay_notice(INCIDENT_ID, SERVICE, "critical", 305.0, settings=unconfigured)
-    assert [r.stage for r in receipts] == ["delay"] * 5  # outbox, teams, email, servicenow, xmatters
+    assert [r.stage for r in receipts] == ["delay"] * 4  # outbox, teams, email, servicenow; xMatters is stage 1 only
     ok = [r for r in receipts if r.ok]
     assert len(ok) == 1 and ok[0].channel == "outbox"
     assert (tmp_path / INCIDENT_ID / "delay.card.json").exists()

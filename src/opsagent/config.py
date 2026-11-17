@@ -46,12 +46,16 @@ class Settings(BaseSettings):
     servicenow_caller_id: str = Field(default="", alias="SERVICENOW_CALLER_ID")
     servicenow_category: str = Field(default="software", alias="SERVICENOW_CATEGORY")
     servicenow_resolve_on_close: bool = Field(default=False, alias="SERVICENOW_RESOLVE_ON_CLOSE")
-    # xMatters on-call paging: a workflow trigger URL raises the event; xM API credentials (a REST user, or an API
-    # key id and secret) allow annotations and termination of that event afterwards.
+    # xMatters heads-up call: the trigger URL (the instance's Send Alert form under /api/xm/1/forms/<id>/triggers, or
+    # a Flow Designer trigger) raises one event at stage 1; the xM API credentials (a REST user, or an API key id and
+    # secret) authenticate the form trigger and terminate the event on close.
     xmatters_trigger_url: str = Field(default="", alias="XMATTERS_TRIGGER_URL")
     xmatters_user: str = Field(default="", alias="XMATTERS_USER")
     xmatters_password: str = Field(default="", alias="XMATTERS_PASSWORD")
     xmatters_recipients: str = Field(default="", alias="XMATTERS_RECIPIENTS")
+    # Devices to ring, comma-separated xMatters device names ("Mobile Phone, Work Phone"); empty notifies every
+    # device the recipients own, email included.
+    xmatters_devices: str = Field(default="", alias="XMATTERS_DEVICES")
     # "payload_key=Form Property" pairs, comma-separated, for forms whose layout does not carry OpsAgent's property
     # names (the stock Send Alert form: "summary=Summary,details=Message"). Empty sends every key under its own name.
     xmatters_properties: str = Field(default="", alias="XMATTERS_PROPERTIES")
@@ -162,6 +166,10 @@ class Settings(BaseSettings):
             if sep and key.strip() and name.strip():
                 out[key.strip()] = name.strip()
         return out
+
+    @property
+    def xmatters_device_names(self) -> list[str]:
+        return [d.strip() for d in self.xmatters_devices.split(",") if d.strip()]
 
     @property
     def xmatters_base_url(self) -> str:

@@ -187,6 +187,7 @@ def test_deliver_fan_out_includes_servicenow(monkeypatch, stage1_pkg, stage2_pkg
     assert "orders-api" in fake.records["sys10001"]["description"]
 
     r2 = {r.channel: r for r in deliver(stage2_pkg, settings=sn_settings)}
+    assert set(r2) == {"outbox", "teams", "email", "servicenow"}  # the heads-up call is stage 1 only
     assert r2["servicenow"].ok and r2["servicenow"].detail.startswith("updated")
     assert "ORDER_CACHE" in fake.records["sys10001"]["work_notes_log"][-1]
 
