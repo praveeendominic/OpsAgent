@@ -4,6 +4,7 @@
 outbox/
 runs/
 *.db
+mlruns/
 
 # python
 __pycache__/

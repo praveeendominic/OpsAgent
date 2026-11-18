@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from crewai import LLM
 
+from opsagent import mlflow_tracing
 from opsagent.config import get_settings
 
 
@@ -20,7 +21,9 @@ def make_llm(temperature: float | None = None, max_tokens: int | None = None) ->
     )
     if max_tokens:
         kwargs["max_tokens"] = max_tokens
-    return LLM(**kwargs)
+    llm = LLM(**kwargs)
+    mlflow_tracing.instrument_llm(llm)
+    return llm
 
 
 def smoke_test() -> str:

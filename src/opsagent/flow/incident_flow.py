@@ -21,6 +21,7 @@ from crewai.flow.persistence import SQLiteFlowPersistence, persist
 from opsagent.config import get_settings
 from opsagent.flow.ids import find_duplicate, mark_closed, new_incident_id
 from opsagent.flow.state import IncidentState
+from opsagent.mlflow_tracing import incident_trace
 from opsagent.schemas.code_correlation import CodeCorrelation
 from opsagent.schemas.diagnosis import Diagnosis, RootCause
 from opsagent.schemas.incident import IncidentPackage
@@ -340,18 +341,26 @@ def run_event(event_path: Path, force: bool = False) -> dict:
         return {"duplicate_of": dup, "event_id": event.event_id, "message": "event de-duplicated; use --force to run anyway"}
     incident_id = new_incident_id(event.event_id, event.instance_id, event.event_type)
     recorder = RunRecorder(incident_id, event.event_id)
-    _warm_up_knowledge_base(recorder)
-    persistence = SQLiteFlowPersistence(str(s.flows_db))
-    flow = IncidentFlow(recorder=recorder, persistence=persistence)
-    try:
-        flow.kickoff(inputs={"event": event.model_dump(mode="json"), "incident_id": incident_id,
-                             "run_dir": str(recorder.dir)})
-    except Exception as exc:  # noqa: BLE001
-        recorder.end_step("flow", error=f"{type(exc).__name__}: {exc}")
-        recorder.finish("failed")
-        raise
-    st = flow.state
+    with incident_trace(incident_id, event) as trace:
+        recorder.trace = trace
+        if trace.trace_id:
+            recorder.note("mlflow", trace.describe())
+        _warm_up_knowledge_base(recorder)
+        persistence = SQLiteFlowPersistence(str(s.flows_db))
+        flow = IncidentFlow(recorder=recorder, persistence=persistence)
+        try:
+            flow.kickoff(inputs={"event": event.model_dump(mode="json"), "incident_id": incident_id,
+                                 "run_dir": str(recorder.dir)})
+        except Exception as exc:  # noqa: BLE001
+            recorder.end_step("flow", error=f"{type(exc).__name__}: {exc}")
+            recorder.finish("failed")
+            raise
+        st = flow.state
+        trace.finish(outputs={"severity": st.severity, "status": recorder.data["status"], "timings": st.timings,
+                              "errors": st.errors, "totals": recorder.data["totals"]},
+                     tags={"severity": st.severity, "status": recorder.data["status"]})
     return {
+        "mlflow_trace_id": trace.trace_id,
         "incident_id": incident_id,
         "severity": st.severity,
         "timings": st.timings,

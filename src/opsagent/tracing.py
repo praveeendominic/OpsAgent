@@ -1,6 +1,6 @@
 """Run recorder: every Flow run writes runs/<incident_id>/run.json with each step, its timing, token usage and
 cost, plus the JSON of every artifact. The Streamlit app and the CLI read this file; nothing else is needed to
-replay a demo."""
+replay a demo. With OPSAGENT_MLFLOW=1 each step is also a span in the incident's MLflow trace (mlflow_tracing.py)."""
 from __future__ import annotations
 
 import json
@@ -12,6 +12,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from opsagent import mlflow_tracing
 from opsagent.config import get_settings
 
 # gpt-4o list prices (USD per 1M tokens) used for the cost estimate when LiteLLM gives none
@@ -83,6 +84,9 @@ class RunRecorder:
             "errors": [],
         }
         self._open: dict[str, dict[str, Any]] = {}
+        # MLflow mirror of the steps (no-ops unless run_event opened an incident trace)
+        self.trace: mlflow_tracing.IncidentTrace | None = None
+        self._spans: dict[str, Any] = {}
         self.flush()
 
     # ------------------------------------------------------------------ steps
@@ -99,6 +103,7 @@ class RunRecorder:
             }
             self._open[name] = step
             self.data["steps"].append(step)
+            self._spans[name] = mlflow_tracing.open_span(name, kind, crew, step["inputs"], root=self.trace)
             self.flush()
 
     def end_step(self, name: str, output: Any = None, usage: dict | None = None, error: str | None = None) -> None:
@@ -125,6 +130,8 @@ class RunRecorder:
                 t["llm_calls"] += int(usage.get("successful_requests", 0))
             if error:
                 self.data["errors"].append({"step": name, "error": error, "at": _now()})
+            mlflow_tracing.close_span(self._spans.pop(name, None), output=step.get("output"), usage=usage,
+                                      cost_usd=step.get("cost_usd"), error=error)
             self.flush()
 
     # ------------------------------------------------------------------ artifacts and milestones
@@ -161,6 +168,8 @@ class RunRecorder:
             self.data["status"] = status
             self.data["finished_at"] = _now()
             self.data["duration_s"] = self.elapsed()
+            for name in list(self._spans):  # steps a failure left open
+                mlflow_tracing.close_span(self._spans.pop(name), error=f"step did not finish (run {status})")
             self.flush()
 
     def flush(self) -> None:

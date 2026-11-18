@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     langfuse_public_key: str = Field(default="", alias="LANGFUSE_PUBLIC_KEY")
     langfuse_secret_key: str = Field(default="", alias="LANGFUSE_SECRET_KEY")
     langfuse_host: str = Field(default="", alias="LANGFUSE_HOST")
+    # MLflow tracing: one trace per incident (flow steps, crews, agents, tasks, tool and LLM calls). The tracking URI
+    # is an MLflow server (http://host:5000) or a database; empty keeps a local SQLite store in the state directory.
+    mlflow_tracing: bool = Field(default=False, alias="OPSAGENT_MLFLOW")
+    mlflow_tracking_uri: str = Field(default="", alias="MLFLOW_TRACKING_URI")
+    mlflow_experiment: str = Field(default="opsagent", alias="MLFLOW_EXPERIMENT_NAME")
 
     # Paths (relative paths resolve against the project root)
     state_dir: Path = Field(default=Path(".opsagent"), alias="OPSAGENT_STATE_DIR")
@@ -182,6 +187,10 @@ class Settings(BaseSettings):
         return f"{scheme}://{host}" if scheme and host else ""
 
     @property
+    def mlflow_uri(self) -> str:
+        return self.mlflow_tracking_uri.strip() or f"sqlite:///{(self.state_path / 'mlflow.db').as_posix()}"
+
+    @property
     def llm_configured(self) -> bool:
         return bool(self.azure_api_key and self.azure_api_base)
 
@@ -195,8 +204,13 @@ class Settings(BaseSettings):
             os.environ.setdefault("AZURE_API_VERSION", self.azure_api_version)
         # keep CrewAI quiet about telemetry/tracing in a client environment
         os.environ.setdefault("CREWAI_DISABLE_TELEMETRY", "true")
-        os.environ.setdefault("OTEL_SDK_DISABLED", "true")
         os.environ.setdefault("CREWAI_TRACING_ENABLED", "false")
+        if self.mlflow_tracing:
+            # MLflow traces through the OpenTelemetry SDK, so the SDK has to stay on; CrewAI's own telemetry is
+            # still off through CREWAI_DISABLE_TELEMETRY
+            os.environ["OTEL_SDK_DISABLED"] = "false"
+        else:
+            os.environ.setdefault("OTEL_SDK_DISABLED", "true")
 
 
 @lru_cache(maxsize=1)

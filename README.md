@@ -18,10 +18,11 @@ python -m opsagent smoke              # one call to the Azure OpenAI deployment
 python -m opsagent kb build           # embeds the bundled docs into the FAISS knowledge base
 python -m opsagent run --event events/log_event.json
 python -m opsagent ui                 # Streamlit run recorder on http://localhost:8501
+python -m opsagent traces             # MLflow UI on the incident traces, http://localhost:5000 (OPSAGENT_MLFLOW=1)
 ```
 
-`python -m opsagent --help` lists every command: `run`, `runs`, `smoke`, `plot`, `ui`, `kb build`, `kb search`,
-`kb label`.
+`python -m opsagent --help` lists every command: `run`, `runs`, `smoke`, `plot`, `ui`, `traces`, `kb build`,
+`kb search`, `kb label`.
 
 ## What a run produces
 
@@ -30,6 +31,7 @@ python -m opsagent ui                 # Streamlit run recorder on http://localho
 - `outbox/<incident_id>/`: the stage 1 and stage 2 Adaptive Cards (JSON, HTML, Markdown) and the emails (`.eml`,
   HTML). These are always written; Teams, SMTP and ServiceNow are used in addition when configured in `.env`.
 - `.opsagent/`: the FAISS knowledge base, the incident registry (de-duplication) and the Flow persistence database.
+- With `OPSAGENT_MLFLOW=1`, one MLflow trace per incident (see [MLflow tracing](#mlflow-tracing)).
 
 The four measures printed at the end of a run: time to stage 1, time to stage 2, total tokens, cost per incident.
 
@@ -51,6 +53,7 @@ src/opsagent/
   flow/                 IncidentFlow, state, incident ids and de-duplication
   ui/                   Streamlit run recorder
   tracing.py            run recorder (run.json), token and cost accounting
+  mlflow_tracing.py     optional MLflow trace per incident (steps, crews, tasks, agents, tools, LLM calls)
 tests/                  offline unit tests and an offline end-to-end Flow test
 ```
 
@@ -112,6 +115,32 @@ and the close step terminates it by id (a Flow Designer trigger answers with a `
 `GET /api/xm/1/events?requestId=...`). Receipts read `heads-up event 94001000 raised (priority HIGH) for L1 Support on
 Mobile Phone, Work Phone` and `terminated heads-up event 94001000: call retries and escalation stopped`; failures are
 `ok: false` receipts with the HTTP status and body, never exceptions. Offline tests use a fake trigger and xM API.
+
+## MLflow tracing
+
+`python -m pip install -e .[tracing]` and `OPSAGENT_MLFLOW=1` in `.env` record every run as **one MLflow trace**, next
+to `run.json` (which stays the source for the Streamlit recorder). `python -m opsagent traces` opens the MLflow UI on
+http://localhost:5000; the trace is under experiment `opsagent`, tagged with `incident_id`, `event_id`, `instance_id`,
+`event_type`, `severity` and `status`, so the Traces tab filters by any of them.
+
+```
+incident inc-20261117-0007                    root: tags, run summary (timings, totals, errors) as the response
+  kb.warm_up
+  IncidentFlow.kickoff                        CrewAI Flow
+    intake, triage.parse                      deterministic steps, with their inputs and outputs
+    triage.analyst                            crew step: token usage and cost as attributes
+      Crew.kickoff > task > agent             MLflow's CrewAI autolog: prompts, tool calls, memory
+        AzureCompletion.call                  one span per LLM call: messages, reply, token usage
+    page_stage1 | diagnose | correlate_code   the three concurrent branches, each with its own subtree
+    page_stage2.write, page_stage2.deliver, close.librarian, close.store
+```
+
+The step spans are the recorder's steps, so a trace and its `run.json` line up name for name; `run.json` carries the
+trace id under `mlflow`. A live run is about 65 spans, and the trace's token count equals the run's `total_tokens`.
+`MLFLOW_TRACKING_URI` points at an MLflow server (`http://host:5000`) or a database; empty keeps a SQLite store in
+`.opsagent/mlflow.db`. `MLFLOW_EXPERIMENT_NAME` renames the experiment. Tracing never fails a run: if MLflow is
+missing or the store is unreachable the run logs a warning and carries on untraced. Prompts and model replies are
+stored in the trace, so a shared tracking server sees the log excerpts the agents read.
 
 ## Tests
 

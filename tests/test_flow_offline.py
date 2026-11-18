@@ -21,6 +21,8 @@ def isolated_settings(tmp_path, monkeypatch):
     # every outbound channel off, whatever the developer's .env holds: offline tests must never reach a live system
     for var in ("TEAMS_WEBHOOK_URL", "SMTP_HOST", "SERVICENOW_INSTANCE", "SERVICENOW_TOKEN", "XMATTERS_TRIGGER_URL"):
         monkeypatch.setenv(var, "")
+    monkeypatch.setenv("OPSAGENT_MLFLOW", "0")
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", "")
     from opsagent import config
 
     config.get_settings.cache_clear()
@@ -188,3 +190,39 @@ def test_flow_refuses_a_broken_policy(isolated_settings, monkeypatch, tmp_path):
             run_event(EVENT, force=True)
     finally:
         severity_policy.clear_policy_cache()
+
+
+def test_flow_is_traced_in_mlflow(isolated_settings, monkeypatch, tmp_path):
+    """With OPSAGENT_MLFLOW=1 a run is one MLflow trace: the incident at the root, the recorder's steps under it."""
+    mlflow = pytest.importorskip("mlflow")
+    from opsagent import config, mlflow_tracing
+
+    uri = f"sqlite:///{(tmp_path / 'mlflow.db').as_posix()}"
+    monkeypatch.setenv("OPSAGENT_MLFLOW", "1")
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", uri)
+    monkeypatch.setenv("OTEL_SDK_DISABLED", "true")  # export_llm_env has to turn the SDK back on
+    config.get_settings.cache_clear()
+    _canned(monkeypatch)
+    from opsagent.flow.incident_flow import run_event
+
+    try:
+        result = run_event(EVENT, force=True)
+        assert result["errors"] == []
+        run = json.loads(Path(result["run_json"]).read_text(encoding="utf-8"))
+        assert run["mlflow"] == {"trace_id": result["mlflow_trace_id"], "tracking_uri": uri, "experiment": "opsagent"}
+
+        mlflow.flush_trace_async_logging()
+        trace = mlflow.get_trace(result["mlflow_trace_id"])
+        assert trace.info.tags["incident_id"] == result["incident_id"] and trace.info.tags["severity"] == "critical"
+        spans = {s.name: s for s in trace.data.spans}
+        root = spans[f"incident {result['incident_id']}"]
+        assert root.parent_id is None and root.outputs["status"] == "done"
+        for step in [s["name"] for s in run["steps"]]:
+            assert step in spans, f"step {step} has no span"
+        # steps inside the Flow hang under its kickoff span; the crew steps carry their usage and cost
+        assert spans["diagnose"].parent_id == spans["IncidentFlow.kickoff"].span_id
+        assert spans["diagnose"].attributes["opsagent.usage"]["total_tokens"] == 1200
+        assert all(s.status.status_code == "OK" for s in trace.data.spans)
+    finally:
+        mlflow.crewai.autolog(disable=True)
+        mlflow_tracing._configured_uri = None

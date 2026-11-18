@@ -70,6 +70,24 @@ def ui(port: int = typer.Option(8501, "--port")) -> None:
 
 
 @app.command()
+def traces(port: int = typer.Option(5000, "--port")) -> None:
+    """Start the MLflow UI on the incident traces (needs OPSAGENT_MLFLOW=1 for runs to be traced)."""
+    import subprocess
+
+    from opsagent.config import get_settings
+
+    s = get_settings()
+    if s.mlflow_uri.startswith(("http://", "https://")):
+        console.print(f"traces are on the MLflow server: {s.mlflow_uri} (experiment {s.mlflow_experiment})")
+        return
+    if not s.mlflow_tracing:
+        console.print("OPSAGENT_MLFLOW is off: runs are not traced until it is set to 1 in .env")
+    # one worker: a local viewer needs no more, and uvicorn's worker processes fail to spawn on some Windows setups
+    subprocess.run([sys.executable, "-m", "mlflow", "ui", "--backend-store-uri", s.mlflow_uri, "--port", str(port),
+                    "--workers", "1"], check=False)
+
+
+@app.command()
 def runs() -> None:
     """List recorded runs."""
     from opsagent.tracing import list_runs
