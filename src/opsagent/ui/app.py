@@ -115,6 +115,14 @@ def st_escape(v: Any) -> str:
     return html.escape(str(v))
 
 
+def short_path(p: Path) -> str:
+    """Project-relative when the path is inside the project, absolute otherwise."""
+    try:
+        return "./" + p.relative_to(PROJECT_ROOT).as_posix()
+    except ValueError:
+        return str(p)
+
+
 def table(rows: list[dict], columns: list[str] | None = None, empty: str = "none") -> None:
     if not rows:
         st.caption(empty)
@@ -139,8 +147,11 @@ ids = [r.get("incident_id", "?") for r in runs]
 by_id = {r.get("incident_id", "?"): r for r in runs}
 
 with st.sidebar:
-    st.markdown("## OpsAgent run recorder")
-    st.caption(SETTINGS.brand)
+    st.markdown(
+        "<div class='oa-brand'><div class='oa-logo'>OA</div><div><div class='oa-brand-name'>OpsAgent</div>"
+        f"<div class='oa-brand-sub'>{st_escape(SETTINGS.brand)} · run recorder</div></div></div>",
+        unsafe_allow_html=True,
+    )
 
     bg_collect()
     if bg_running():
@@ -186,8 +197,8 @@ with st.sidebar:
         st.markdown(f"{R.status_badge_html('sample')} <span class='oa-muted'>sample run from "
                     f"<code>tests/fixtures/run_sample.json</code>; the runs folder is empty</span>",
                     unsafe_allow_html=True)
-    st.caption(f"runs: {SETTINGS.runs_path}")
-    st.caption(f"outbox: {SETTINGS.outbox_path}")
+    st.markdown(f"<div class='oa-paths'>runs&nbsp;&nbsp;&nbsp;{st_escape(short_path(SETTINGS.runs_path))}<br>"
+                f"outbox {st_escape(short_path(SETTINGS.outbox_path))}</div>", unsafe_allow_html=True)
 
 run = by_id.get(st.session_state.get("selected_run")) if ids else None
 
@@ -200,26 +211,12 @@ if run is None:
 incident_id = run.get("incident_id", "?")
 status = run.get("status", "unknown")
 artifacts = run.get("artifacts") or {}
-timings = run.get("timings") or {}
-totals = run.get("totals") or {}
 
-sample_badge = R.status_badge_html("sample") if is_sample else ""
-st.markdown(
-    f"<div class='oa-header'><span class='oa-id'>{st_escape(incident_id)}</span>{R.status_badge_html(status)}{sample_badge}</div>"
-    f"<div class='oa-subline'>model <b>{st_escape(run.get('model') or '–')}</b> · started <b>{R.fmt_local(run.get('started_at'))}</b>"
-    f" · finished <b>{R.fmt_local(run.get('finished_at'))}</b> · duration <b>{R.fmt_seconds(R.run_duration(run))}</b>"
-    f" · event <span class='oa-mono'>{st_escape(run.get('event_id') or '–')}</span></div>",
-    unsafe_allow_html=True,
-)
+st.markdown(R.hero_html(run, brand=SETTINGS.brand, is_sample=is_sample), unsafe_allow_html=True)
+st.markdown(R.kpi_html(run, stage1_target_s=SETTINGS.stage1_target_seconds), unsafe_allow_html=True)
 
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("Time to stage 1", R.fmt_seconds(timings.get("stage1")) if "stage1" in timings else "–")
-m2.metric("Time to stage 2", R.fmt_seconds(timings.get("stage2")) if "stage2" in timings else "–")
-m3.metric("Total tokens", R.fmt_tokens(totals.get("total_tokens")),
-          help=f"prompt {R.fmt_tokens(totals.get('prompt_tokens'))} · completion {R.fmt_tokens(totals.get('completion_tokens'))}"
-               f" · {totals.get('llm_calls', 0)} LLM calls")
-m4.metric("Cost (USD)", R.fmt_cost(totals.get("cost_usd")))
-
+st.markdown("#### Agent crews")
+st.markdown(R.pipeline_html(run), unsafe_allow_html=True)
 st.markdown("#### Steps")
 st.markdown(R.timeline_html(run), unsafe_allow_html=True)
 with st.expander("Step table"):
@@ -349,7 +346,7 @@ with tabs[3]:
         table([{"horizon": f.get("horizon"), "owner": f.get("owner"), "action": f.get("action"), "detail": f.get("detail"),
                 "command": f.get("command") or "", "reversal": f.get("reversal") or ""} for f in dg.get("fixes") or []])
         for f in dg.get("fixes") or []:
-            if f.get("command"):
+            if f.get("command") and f["command"].strip().upper() != "N/A":
                 st.code(f["command"], language="bash")
         st.markdown("**Citations**")
         table(dg.get("citations") or [], ["title", "source", "snippet"])

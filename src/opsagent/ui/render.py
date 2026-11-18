@@ -174,6 +174,85 @@ def status_badge_html(status: str | None) -> str:
     return f"<span class='oa-badge oa-badge-{html.escape(status)}'>{html.escape(status)}</span>"
 
 
+def incident_headline(run: dict) -> str:
+    """'CRITICAL · orders-api · process oom kill' from the triage artifact; '' before triage has run."""
+    tri = (run.get("artifacts") or {}).get("triage") or {}
+    cls = tri.get("classification") or {}
+    parts = [str(tri.get("severity") or "").upper(), tri.get("service") or "",
+             str(cls.get("sub_reason") or cls.get("reason") or "").replace("_", " ")]
+    return " · ".join(p for p in parts if p)
+
+
+def hero_html(run: dict, brand: str = "", is_sample: bool = False) -> str:
+    """Dark header band: brand eyebrow, incident headline, id and status badges, run facts."""
+    tri = (run.get("artifacts") or {}).get("triage") or {}
+    inst = tri.get("instance") or {}
+    severity = str(tri.get("severity") or "").lower()
+    headline = incident_headline(run) or "Incident run"
+    where = " · ".join(str(x) for x in (inst.get("instance_id"), inst.get("instance_type"), inst.get("region")) if x)
+    eyebrow = " · ".join(x for x in (brand, "OpsAgent incident console") if x)
+    badges = status_badge_html(run.get("status")) + (status_badge_html("sample") if is_sample else "")
+    facts = [("model", run.get("model") or "–"), ("started", fmt_local(run.get("started_at"))),
+             ("duration", fmt_seconds(run_duration(run))), ("event", run.get("event_id") or "–")]
+    fact_html = "".join(f"<span><i>{html.escape(k)}</i>{html.escape(str(v))}</span>" for k, v in facts)
+    return (
+        f"<div class='oa-hero oa-hero-{html.escape(severity or 'none')}'>"
+        f"<div class='oa-eyebrow'>{html.escape(eyebrow)}</div>"
+        f"<div class='oa-hero-title'>{html.escape(headline)}</div>"
+        f"<div class='oa-hero-id'><span class='oa-id'>{html.escape(str(run.get('incident_id', '?')))}</span>{badges}"
+        f"<span class='oa-hero-where'>{html.escape(where)}</span></div>"
+        f"<div class='oa-hero-facts'>{fact_html}</div>"
+        "</div>"
+    )
+
+
+def kpi_html(run: dict, stage1_target_s: float | None = None) -> str:
+    """Four headline numbers: time to first alert, time to root cause, LLM usage, cost."""
+    timings = run.get("timings") or {}
+    totals = run.get("totals") or {}
+    s1 = timings.get("stage1")
+    s1_note = "triage card sent to the on-call"
+    if s1 is not None and stage1_target_s:
+        s1_note = f"target under {int(stage1_target_s)} s · " + ("met" if float(s1) <= stage1_target_s else "missed")
+    cards = [
+        ("First alert", fmt_seconds(s1) if s1 is not None else "–", s1_note, "alert"),
+        ("Root cause delivered", fmt_seconds(timings["stage2"]) if "stage2" in timings else "–",
+         "diagnosis, code verdict and fixes", "rca"),
+        ("LLM usage", fmt_tokens(totals.get("total_tokens")),
+         f"tokens · {int(totals.get('llm_calls') or 0)} calls", "llm"),
+        ("Cost per incident", f"${float(totals.get('cost_usd') or 0.0):.2f}", fmt_cost(totals.get("cost_usd")) + " USD", "cost"),
+    ]
+    out = ["<div class='oa-kpis'>"]
+    for label, value, note, kind in cards:
+        out.append(f"<div class='oa-kpi oa-kpi-{kind}'><div class='oa-kpi-label'>{html.escape(label)}</div>"
+                   f"<div class='oa-kpi-value'>{html.escape(value)}</div>"
+                   f"<div class='oa-kpi-note'>{html.escape(note)}</div></div>")
+    out.append("</div>")
+    return "".join(out)
+
+
+def pipeline_html(run: dict, now: datetime | None = None) -> str:
+    """One chip per crew in order of first appearance: status, time spent and tokens."""
+    crews: dict[str, dict] = {}
+    for r in steps_table(run, now=now):
+        if not r["crew"]:
+            continue
+        c = crews.setdefault(r["crew"], {"duration": 0.0, "tokens": 0, "status": "done"})
+        c["duration"] += float(r["duration_s"] or 0)
+        c["tokens"] += r["tokens"]
+        if r["status"] == "error" or (r["status"] == "running" and c["status"] != "error"):
+            c["status"] = r["status"]
+    if not crews:
+        return ""
+    chips = []
+    for name, c in crews.items():
+        meta = fmt_seconds(c["duration"]) + (f" · {fmt_tokens(c['tokens'])} tok" if c["tokens"] else "")
+        chips.append(f"<div class='oa-crew oa-crew-{html.escape(c['status'])}'><span class='oa-dot'></span>"
+                     f"<div><div class='oa-crew-name'>{html.escape(name)}</div>"
+                     f"<div class='oa-crew-meta'>{html.escape(meta)}</div></div></div>")
+    return "<div class='oa-pipeline'>" + "<span class='oa-arrow'>→</span>".join(chips) + "</div>"
+
+
 # ---------------------------------------------------------------------------------------------------- Adaptive Cards
 _MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
 _MD_ITALIC = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")
